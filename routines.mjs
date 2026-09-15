@@ -17,9 +17,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, nextRun, valid } from './src/when.js';
+import { MODEL_KEYS, normModel } from './src/models.js';
 
-export const ALLOWED = ['emails', 'fin', 'sales'];
-export const NAMES = { emails: 'Emails', fin: 'Accounting', sales: 'Sales', marketing: 'Marketing', ops: 'Operations', delivery: 'Delivery' };
+export const ALLOWED = ['emails', 'fin', 'sales', 'marketing', 'ops', 'delivery', 'design', 'dev', 'qa'];
+export const NAMES = { emails: 'Emails', fin: 'Accounting', sales: 'Sales', marketing: 'Marketing', ops: 'Operations', delivery: 'Delivery', design: 'Design', dev: 'Development', qa: 'QA' };
 export const file = brainPath => path.join(brainPath, 'Agents Office', 'routines.json');
 export const stateFile = dataDir => path.join(dataDir, 'routines.json');
 export const LATE_AFTER = 90 * 1000; // a run more than 90 s past its minute was missed (asleep, or the office was off) → runs once, marked LATE
@@ -27,9 +28,9 @@ export const LATE_AFTER = 90 * 1000; // a run more than 90 s past its minute was
 const slug = t => String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 const readJSON = (p, fallback) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fallback; } };
 
-/** "Routines come to Marketing in a later release. This release: Emails, Accounting, Sales." */
+/** Returns refusal sentence if department is invalid */
 export function refusal(dept) {
-  return `Routines come to ${NAMES[dept] || dept} in a later release. This release: Emails, Accounting and Sales.`;
+  return `Department "${dept}" is not recognized for routines.`;
 }
 
 /** Normalise + check one routine against the roster. Returns { routine, problems }. Fixed fields are kept as given; bad ones are named. */
@@ -38,7 +39,6 @@ export function validate(r, agents, existing = []) {
   const out = {};
   const a = agents.find(x => x.id === r.agent);
   out.dept = r.dept || (a && a.department);
-  if (!ALLOWED.includes(out.dept)) problems.push(`${r.id || r.title || 'routine'}: ${refusal(out.dept)}`);
   if (!a) problems.push(`${r.id || r.title || 'routine'}: no agent called "${r.agent}"`);
   else if (a.department !== out.dept) problems.push(`${r.id || r.title || 'routine'}: ${a.name} is in ${NAMES[a.department] || a.department}, not ${NAMES[out.dept] || out.dept}`);
   out.agent = r.agent;
@@ -52,7 +52,7 @@ export function validate(r, agents, existing = []) {
   out.needsOk = r.needsOk !== false;
   out.paused = r.paused === true;
   if (Array.isArray(r.plan)) out.plan = r.plan.slice(0, 4).map(String);
-  if (r.model !== undefined && r.model !== '' && r.model !== null) { const m = String(r.model).toLowerCase().trim(); if (['sonnet', 'opus', 'fable'].includes(m)) out.model = m; else problems.push(`${out.id}: model must be sonnet, opus or fable (got "${r.model}")`); }
+  if (r.model !== undefined && r.model !== '' && r.model !== null) { const m = normModel(r.model); if (m) out.model = m; else problems.push(`${out.id}: model must be one of ${MODEL_KEYS.join(', ')} (got "${r.model}")`); }
   if (r.effort !== undefined && r.effort !== '' && r.effort !== null) { const e = String(r.effort).toLowerCase().trim(); if (['low', 'medium', 'high', 'xhigh', 'max'].includes(e)) out.effort = e; else problems.push(`${out.id}: effort must be low, medium, high, xhigh or max (got "${r.effort}")`); }
   return { routine: out, problems };
 }

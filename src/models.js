@@ -7,15 +7,50 @@
 // names them; AUTO (empty) = the model's own default (Opus runs at high). Same four places, same
 // precedence as the model, then the model's own.
 export const MODELS = {
-  sonnet: { key: 'sonnet', name: 'Sonnet', flag: 'sonnet', id: 'claude-sonnet-5' },
-  opus:   { key: 'opus',   name: 'Opus',   flag: 'opus',   id: 'claude-opus-5', effort: 'high' },
-  fable:  { key: 'fable',  name: 'Fable',  flag: 'fable',  id: 'claude-fable-5-1' },
+  sonnet: { key: 'sonnet', name: 'Sonnet', flag: 'sonnet', id: 'claude-sonnet-5', provider: 'anthropic' },
+  opus:   { key: 'opus',   name: 'Opus',   flag: 'opus',   id: 'claude-opus-5', effort: 'high', provider: 'anthropic' },
+  fable:  { key: 'fable',  name: 'Fable',  flag: 'fable',  id: 'claude-fable-5-1', provider: 'anthropic' },
+  'antigravity-flash': { key: 'antigravity-flash', name: 'Antigravity Flash 3.6', flag: 'antigravity-flash', id: 'gemini-3.6-flash', provider: 'antigravity' },
+  'antigravity-pro': { key: 'antigravity-pro', name: 'Antigravity Pro 3.5', flag: 'antigravity-pro', id: 'gemini-3.5-pro', provider: 'antigravity', effort: 'high' },
+  'antigravity-thinking': { key: 'antigravity-thinking', name: 'Antigravity Thinking 3.1', flag: 'antigravity-thinking', id: 'gemini-3.1-thinking', provider: 'antigravity', effort: 'max' },
+  'hermes-3-405b': { key: 'hermes-3-405b', name: 'Hermes 3 (405B)', flag: 'hermes-3-405b', id: 'hermes-3-llama-3.1-405b', provider: 'hermes', effort: 'high' },
+  'hermes-3-70b': { key: 'hermes-3-70b', name: 'Hermes 3 (70B)', flag: 'hermes-3-70b', id: 'hermes-3-llama-3.1-70b', provider: 'hermes' },
+  'hermes-2-pro': { key: 'hermes-2-pro', name: 'Hermes 2 Pro', flag: 'hermes-2-pro', id: 'hermes-2-pro-mistral-7b', provider: 'hermes' },
 };
-export const MODEL_KEYS = ['sonnet', 'opus', 'fable'];
-export const DEFAULT_MODEL = 'sonnet';
-export const FROM_TEXT = { task: 'this task', routine: 'this routine', agent: 'this agent', office: 'office default', model: 'the model\'s own' };
+export const MODEL_KEYS = ['sonnet', 'opus', 'fable', 'antigravity-flash', 'antigravity-pro', 'antigravity-thinking', 'hermes-3-405b', 'hermes-3-70b', 'hermes-2-pro'];
+export const DEFAULT_MODEL = 'hermes-3-70b';
+export const FROM_TEXT = { task: 'this task', routine: 'this routine', agent: 'this agent', dept: 'this department', office: 'office default', model: 'the model\'s own' };
 export const EFFORT_KEYS = ['low', 'medium', 'high', 'xhigh', 'max'];
 export const EFFORT_NAME = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-high', max: 'Max' };
+
+export const MODEL_ALIASES = {
+  flash: 'antigravity-flash',
+  'gemini-flash': 'antigravity-flash',
+  'gemini-3.6-flash': 'antigravity-flash',
+  'antigravity-flash': 'antigravity-flash',
+  pro: 'antigravity-pro',
+  'gemini-pro': 'antigravity-pro',
+  'gemini-3.5-pro': 'antigravity-pro',
+  'antigravity-pro': 'antigravity-pro',
+  thinking: 'antigravity-thinking',
+  'gemini-thinking': 'antigravity-thinking',
+  'gemini-3.1-thinking': 'antigravity-thinking',
+  'antigravity-thinking': 'antigravity-thinking',
+  hermes: 'hermes-3-70b',
+  'hermes-3': 'hermes-3-70b',
+  'hermes-405b': 'hermes-3-405b',
+  'hermes-70b': 'hermes-3-70b',
+  'hermes-pro': 'hermes-2-pro',
+  'hermes-3-405b': 'hermes-3-405b',
+  'hermes-3-70b': 'hermes-3-70b',
+  'hermes-2-pro': 'hermes-2-pro',
+  sonnet: 'sonnet',
+  'claude-sonnet-5': 'sonnet',
+  opus: 'opus',
+  'claude-opus-5': 'opus',
+  fable: 'fable',
+  'claude-fable-5-1': 'fable',
+};
 
 /** "High" · "xhigh" · "extra high" → the CLI level; empty/auto/unknown → null. */
 export function normEffort(s) {
@@ -28,30 +63,33 @@ export function normEffort(s) {
 export const effortName = k => EFFORT_NAME[k] || 'Auto';
 
 /** The effort that wins, and where it was set; falls through to the model's own default (may be null = the CLI decides). */
-export function effortFor({ task, routine, agent, office, model } = {}) {
+export function effortFor({ task, routine, agent, dept, office, model } = {}) {
   if (normEffort(task)) return { effort: normEffort(task), from: 'task' };
   if (normEffort(routine)) return { effort: normEffort(routine), from: 'routine' };
   if (normEffort(agent)) return { effort: normEffort(agent), from: 'agent' };
+  if (normEffort(dept)) return { effort: normEffort(dept), from: 'dept' };
   if (normEffort(office)) return { effort: normEffort(office), from: 'office' };
   const m = MODELS[normModel(model)] || MODELS[DEFAULT_MODEL];
   return { effort: m.effort || null, from: 'model' };
 }
 
-/** "opus" · "Opus" · "claude-opus-5" → "opus"; anything else → null. */
+/** Resolves model key or alias to canonical model key, or null. */
 export function normModel(s) {
   const t = String(s || '').toLowerCase().trim();
   if (!t) return null;
+  if (MODEL_ALIASES[t]) return MODEL_ALIASES[t];
   for (const k of MODEL_KEYS) if (t === k || t.includes(k)) return k;
   return null;
 }
 export const modelName = k => (MODELS[k] || MODELS[DEFAULT_MODEL]).name;
 export const modelId = k => (MODELS[k] || MODELS[DEFAULT_MODEL]).id;
 
-/** The one that wins, and where it was set. Each argument is a model key or empty. */
-export function modelFor({ task, routine, agent, office } = {}) {
+/** The one that wins, and where it was set. Precedence: Task > Routine > Agent > Dept > Office Default. */
+export function modelFor({ task, routine, agent, dept, office } = {}) {
   if (normModel(task)) return { model: normModel(task), from: 'task' };
   if (normModel(routine)) return { model: normModel(routine), from: 'routine' };
   if (normModel(agent)) return { model: normModel(agent), from: 'agent' };
+  if (normModel(dept)) return { model: normModel(dept), from: 'dept' };
   return { model: normModel(office) || DEFAULT_MODEL, from: 'office' };
 }
 

@@ -499,11 +499,12 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
   }
 
   function pulse(item, now, amp = 0.3) {
+    if (!item) return;
     item.pulseT0 = now;
     item.pulseAmp = amp;
     item.lastActive = now;
     // docks hidden (overview) → the top-bar logo carries the activity pulse instead
-    if (dockAcur < 0.5) {
+    if (dockAcur < 0.5 && item.key) {
       const img = topImgs[item.key];
       if (img && img.classList.contains('in')) {
         img.classList.remove('tpulse'); void img.offsetWidth; img.classList.add('tpulse');
@@ -546,11 +547,11 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
   }
 
   function spawnBeam(item, seatPos, now, { reverse = false, count = 4, delay = 0, scale = 1 } = {}) {
-    if (!cam) return;
+    if (!cam || !item || !item.dept || !seatPos) return;
     // overview: docks are hidden, so the exchange rides the dept's permanent wire instead
     // of free-flying packets — one pulse dot per train, direction preserved
-    if (dockAcur < 0.5) { wirePulse(item.dept, { reverse, delay, scale, shared: SHARED[item.key] ? item.key : null }); return; }
-    const tile = item.sprite.position.clone();
+    if (dockAcur < 0.5) { wirePulse(item.dept, { reverse, delay, scale, shared: item.key && SHARED[item.key] ? item.key : null }); return; }
+    const tile = item.sprite ? item.sprite.position.clone() : new THREE.Vector3();
     const desk = seatPos.clone(); desk.y += 3.1;
     const from = reverse ? desk : tile, to = reverse ? tile : desk;
     const mid = from.clone().lerp(to, 0.5); mid.y = Math.max(from.y, to.y) + 2.4;
@@ -675,9 +676,10 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
     };
 
     for (const it of items) {
+      if (!it) continue;
       const off = (it.i - (it.n - 1) / 2) * gap;
       // coordinated group breath: whole row bobs gently, tiles slightly phase-offset
-      const bob = 0.22 * Math.sin(now / 750 + it.bobPhase);
+      const bob = 0.22 * Math.sin(now / 750 + (it.bobPhase || 0));
       anchorOf(it.dept, it.sprite.position);
       it.sprite.position.x += SR.x * off;
       it.sprite.position.y += bob;
@@ -685,8 +687,8 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
 
       it.sprite.visible = it.glow.visible = dockA > 0.02;
       it.sprite.material.opacity = dockA;
-      const pk = (now - it.pulseT0) / 600;
-      const pop = pk >= 0 && pk < 1 ? 1 + it.pulseAmp * Math.sin(Math.min(pk, 1) * Math.PI) : 1;
+      const pk = (now - (it.pulseT0 || 0)) / 600;
+      const pop = pk >= 0 && pk < 1 ? 1 + (it.pulseAmp || 0.3) * Math.sin(Math.min(pk, 1) * Math.PI) : 1;
       it.sprite.scale.set(base * pop, base * pop, 1);
       it.glow.position.copy(it.sprite.position);
       it.glow.scale.set(base * 2.1 * pop, base * 2.1 * pop, 1);
@@ -720,13 +722,15 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
 
       // steady exchange: a random connector and a random desk trade packets both ways —
       // the constant "connectors helping the agents" energy AJ asked for
-      if (now > dk.nextAmbient && dk.seats.length) {
+      if (now > dk.nextAmbient && dk.seats.length && n > 0) {
         const item = byDept[dept][Math.floor(Math.random() * n)];
-        const seat = dk.seats[Math.floor(Math.random() * dk.seats.length)];
-        const outFirst = Math.random() < 0.5;
-        pulse(item, now, 0.18);
-        spawnBeam(item, seat, now, { reverse: !outFirst, count: 3, scale: 0.8 });
-        spawnBeam(item, seat, now, { reverse: outFirst, count: 2, delay: 700, scale: 0.7 });
+        if (item) {
+          const seat = dk.seats[Math.floor(Math.random() * dk.seats.length)];
+          const outFirst = Math.random() < 0.5;
+          pulse(item, now, 0.18);
+          spawnBeam(item, seat, now, { reverse: !outFirst, count: 3, scale: 0.8 });
+          spawnBeam(item, seat, now, { reverse: outFirst, count: 2, delay: 700, scale: 0.7 });
+        }
         // overview wires want calm — sparse pulses; zoomed-in docks keep the busy exchange
         dk.nextAmbient = now + (1300 + Math.random() * 1900) * (focused && focused !== 'brain' ? 1.5 : 2.8);
       }

@@ -584,7 +584,13 @@ export function initTasks(ctx) {
       if (!h.ok) return;
       live = true; setOfficeModel(h.model); setOfficeEffort(h.effort);
       const mode = panel.querySelector('.tp-mode');
-      if (mode) { mode.hidden = false; mode.textContent = 'LIVE · ' + (h.backend === 'anthropic-sdk' ? 'CLAUDE API' : 'CLAUDE'); mode.classList.add('live'); mode.title = `${h.name} · ${h.backend} · ${modelName(h.model)} by default · brain: ${h.brain}`; }
+      if (mode) {
+        const engineLabel = (h.provider || 'antigravity').toUpperCase();
+        mode.hidden = false;
+        mode.textContent = 'LIVE · ' + engineLabel;
+        mode.classList.add('live');
+        mode.title = `${h.name} · ${engineLabel} · ${modelName(h.model)} by default · brain: ${h.brain}`;
+      }
       if (brain) { try { brain.setGraph(await (await fetch(API + '/brain')).json()); } catch {} }
       const list = await (await fetch(API + '/tasks')).json();
       for (const st of list) {

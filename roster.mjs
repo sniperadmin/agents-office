@@ -10,13 +10,13 @@ import path from 'node:path';
 import { ROOT, loadConfig } from './config.mjs';
 import { AGENTS, DEPTS } from './src/data.js';
 import { V1 } from './src/v1data.js';
+import { MODEL_KEYS, normModel } from './src/models.js';
 
 export const FILE = path.join(ROOT, 'office.agents.json');
 export const LOCAL = path.join(ROOT, 'office.agents.local.json');
 export const brainFile = brainPath => path.join(brainPath, 'Agents Office', 'agents.json');
 const EDITABLE = ['name', 'role', 'does', 'tools', 'brief', 'model', 'effort'];
 const BRIEF_MAX = 2000;
-const MODELS = ['sonnet', 'opus', 'fable']; // V3.6: an agent's model, by name; empty = the office default
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']; // V3.6.1: an agent's effort; empty = the office's, then the model's own
 
 export function defaults() {
@@ -31,20 +31,31 @@ export function validate(doc, base = defaults()) {
   const seen = new Set();
   for (const e of list) {
     if (!e || typeof e !== 'object' || !e.id) { problems.push('an entry has no "id" — skipped'); continue; }
-    const a = out.find(x => x.id === e.id);
-    if (!a) { problems.push(`"${e.id}" is not one of the 35 seats — skipped (new agents are not supported; rename a seat instead)`); continue; }
+    let a = out.find(x => x.id === e.id);
+    if (!a) {
+      if (base.some(x => x.id === 'elead') && !doc.allowCustomSeats) {
+        problems.push(`"${e.id}" is not one of the 35 seats — skipped (new agents are not supported; rename a seat instead)`);
+        continue;
+      }
+      a = { id: e.id, department: e.department || 'ops', lead: !!e.lead, name: String(e.name || e.id).toUpperCase(), role: String(e.role || ''), does: String(e.does || ''), tools: [], brief: '', model: '', effort: '' };
+      out.push(a);
+    }
     if (seen.has(e.id)) problems.push(`"${e.id}" appears twice — the later entry wins`);
     seen.add(e.id);
-    if (e.department !== undefined && e.department !== a.department) problems.push(`"${e.id}": department cannot change (${a.department} → ${e.department}) — ignored`);
-    if (e.lead !== undefined && !!e.lead !== a.lead) problems.push(`"${e.id}": lead cannot change — ignored`);
+    if (e.department !== undefined && a.department && e.department !== a.department && base.some(x => x.id === e.id)) problems.push(`"${e.id}": department cannot change (${a.department} → ${e.department}) — ignored`);
+    else if (e.department) a.department = e.department;
+    if (e.lead !== undefined && base.some(x => x.id === e.id) && !!e.lead !== a.lead) problems.push(`"${e.id}": lead cannot change — ignored`);
+    else if (e.lead !== undefined) a.lead = !!e.lead;
     for (const k of Object.keys(e)) if (!['id', 'department', 'lead', ...EDITABLE].includes(k)) problems.push(`"${e.id}": unknown field "${k}" — ignored`);
     if (e.name !== undefined) { const n = String(e.name).trim(); if (!n) problems.push(`"${e.id}": empty name — kept "${a.name}"`); else a.name = n.slice(0, 32).toUpperCase(); }
     if (e.role !== undefined) a.role = String(e.role).trim().slice(0, 80);
     if (e.does !== undefined) a.does = String(e.does).trim().slice(0, 400);
     if (e.tools !== undefined) { if (!Array.isArray(e.tools)) problems.push(`"${e.id}": tools must be a list — ignored`); else a.tools = e.tools.map(String).map(s => s.trim()).filter(Boolean).slice(0, 12); }
-    if (e.model !== undefined) { // V3.6: sonnet · opus · fable, or empty for the office default
-      const m = String(e.model || '').toLowerCase().trim();
-      if (!m) a.model = ''; else if (MODELS.includes(m)) a.model = m; else problems.push(`"${e.id}": model must be sonnet, opus or fable (got "${e.model}") — kept ${a.model || 'the office default'}`);
+    if (e.model !== undefined) {
+      const m = normModel(e.model);
+      if (!e.model || e.model === '') a.model = '';
+      else if (m) a.model = m;
+      else problems.push(`"${e.id}": model must be one of ${MODEL_KEYS.join(', ')} (got "${e.model}") — kept ${a.model || 'the office default'}`);
     }
     if (e.effort !== undefined) { // V3.6.1: low · medium · high · xhigh · max, or empty
       const v = String(e.effort || '').toLowerCase().trim();

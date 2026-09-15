@@ -15,7 +15,7 @@ export const TOKENS = {
 // a new 'ops' pod (OPERATIONS) alongside Legal Review, Compliance and Internal Reporting.
 // V3.1 (5 Sep 2026, AJ): SUPPORT → EMAILS (same mint slot), new DELIVERY pod (sky) on the top axis.
 export const DEPT_KEYS = ['emails', 'sales', 'marketing', 'ops', 'fin', 'delivery'];
-export const DEPTS = {
+const baseDEPTS = {
   emails:    { name: 'EMAILS',           short: 'EMAILS',  chip: '#5ADEB7', ink: '#1E9070', floor: '#E9F6EF' },
   delivery:  { name: 'DELIVERY',         short: 'DELIVERY', chip: '#8FD3F4', ink: '#2E86AB', floor: '#E6F4FB' },
   sales:     { name: 'SALES',            short: 'SALES',   chip: '#EADC8F', ink: '#A08A1E', floor: '#F6F1DA' },
@@ -24,6 +24,16 @@ export const DEPTS = {
   ops:       { name: 'OPERATIONS',       short: 'OPERATIONS', chip: '#BFA2E3', ink: '#7449A9', floor: '#F2ECFA' },
   brain:     { name: 'THE BRAIN',        short: 'THE BRAIN', chip: '#D1DECD', ink: '#4C7A57', floor: '#E9EFE4' },
 };
+export const DEPTS = new Proxy(baseDEPTS, {
+  get(target, prop) {
+    if (prop in target) return target[prop];
+    if (typeof prop === 'string' && prop !== 'then') {
+      const name = prop.toUpperCase();
+      return { name, short: name, chip: '#B0ADA3', ink: '#5A5A5A', floor: '#EFEFE8' };
+    }
+    return undefined;
+  }
+});
 
 // 35 agents (V3.4, 7 Sep 2026: every department has a lead). grid = [col,row] desk slot on the department plinth.
 export const AGENTS = [

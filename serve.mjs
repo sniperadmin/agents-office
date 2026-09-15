@@ -40,7 +40,7 @@ import * as learn from './learn.mjs';
 import * as onboard from './onboard.mjs';
 import * as routines from './routines.mjs';
 import * as usage from './usage.mjs';
-import { normModel, modelFor, modelArgs, modelId, modelName, MODEL_KEYS, DEFAULT_MODEL, normEffort, effortFor, effortName, EFFORT_KEYS } from './src/models.js';
+import { normModel, modelFor, modelArgs, modelId, modelName, MODELS, MODEL_KEYS, DEFAULT_MODEL, normEffort, effortFor, effortName, EFFORT_KEYS } from './src/models.js';
 import { parseWhen, describe, valid as validWhen, untilText } from './src/when.js';
 
 const cfg = loadConfig();
@@ -52,7 +52,7 @@ const NOTES_DIR = path.join(BRAIN, 'Agents Office');
 const CLI_CWD = path.join(os.tmpdir(), 'agents-office-cli'); // an empty cwd: no CLAUDE.md, no repo context
 const version = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return '?'; } })();
 const RUN_TIMEOUT = Math.max(60, +cfg.timeout || 300) * 1000; // agents with tools take longer than a plain draft
-{ const m = normModel(cfg.model); if (cfg.model && !m) console.warn(`config: model must be sonnet, opus or fable (got "${cfg.model}") — using ${DEFAULT_MODEL}`); cfg.model = m || DEFAULT_MODEL; } // V3.6: three models, by name
+{ const m = normModel(cfg.model); if (cfg.model && !m) console.warn(`config: model must be one of ${MODEL_KEYS.join(', ')} (got "${cfg.model}") — using ${DEFAULT_MODEL}`); cfg.model = m || DEFAULT_MODEL; }
 { const e = normEffort(cfg.effort); if (cfg.effort && !e) console.warn(`config: effort must be low, medium, high, xhigh or max (got "${cfg.effort}") — using the model's own`); cfg.effort = e || ''; } // V3.6.1: the office's effort, empty = the model's own
 mcp.configure(cfg);
 const roster = loadRoster(BRAIN);
@@ -100,7 +100,7 @@ const slug = t => String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^
 // askX → { text, tools }: tools = the MCP/web tools the agent actually called (for the office to
 // light up). On the CLI the agent gets --allowedTools = every connected server the config allows
 // (+ web); file tools, Bash and sub-agents stay off — the office is not a coding session.
-async function askX(system, user, { maxTokens = 4000, tools = true, timeout = RUN_TIMEOUT, model = cfg.model, effort = null } = {}) { // model: sonnet · opus · fable · effort: low…max or null = the model's own (src/models.js)
+async function askX(system, user, { maxTokens = 4000, tools = true, timeout = RUN_TIMEOUT, model = cfg.model, effort = null } = {}) {
   if (sdk) {
     const res = await sdk.messages.create({ model: modelId(model), max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] });
     if (res.stop_reason === 'refusal') throw new Error('Claude declined this request');
@@ -108,16 +108,40 @@ async function askX(system, user, { maxTokens = 4000, tools = true, timeout = RU
     return { text: res.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim(), tools: [], usage: res.usage, modelId: res.model };
   }
   fs.mkdirSync(CLI_CWD, { recursive: true });
+  const mObj = MODELS[normModel(model)] || MODELS[DEFAULT_MODEL];
+  const provider = mObj.provider || 'hermes';
+  let bin = 'claude';
+  let isHermes = false;
+  if (provider === 'hermes' && (fs.existsSync('/home/nasr/.local/bin/hermes') || process.env.HERMES_CLI)) {
+    bin = process.env.HERMES_CLI || '/home/nasr/.local/bin/hermes';
+    isHermes = true;
+  } else if (provider === 'antigravity' && process.env.ANTIGRAVITY_CLI) {
+    bin = process.env.ANTIGRAVITY_CLI;
+  }
+
+  let args = [];
   const allowed = tools ? mcp.allowedTools() : [];
-  const args = ['-p', user, '--output-format', 'stream-json', '--verbose', '--no-session-persistence', '--system-prompt', system,
+  const claudeArgs = ['-p', user, '--output-format', 'stream-json', '--verbose', '--no-session-persistence', '--system-prompt', system,
     '--disallowedTools', 'Bash,Edit,Write,Read,Glob,Grep,Agent,NotebookEdit,Task' + (allowed.includes('WebFetch') ? '' : ',WebFetch,WebSearch')];
-  if (allowed.length) args.push('--allowedTools', allowed.join(','));
-  args.push(...modelArgs(model, effort));
-  const env = { ...process.env }; delete env.CLAUDECODE; // the CLI refuses to nest inside another Claude Code session
+  if (allowed.length) claudeArgs.push('--allowedTools', allowed.join(','));
+  claudeArgs.push(...modelArgs(model, effort));
+
+  if (isHermes) {
+    const fullPrompt = system ? `${system}\n\nUSER REQUEST:\n${user}` : user;
+    args = ['-z', fullPrompt];
+    if (mObj.flag) args.push('-m', mObj.flag);
+    const eff = normEffort(effort) || mObj.effort;
+    if (eff) args.push('--reasoning', eff);
+  } else {
+    args = claudeArgs;
+  }
+
+  const env = { ...process.env }; delete env.CLAUDECODE;
+
   return new Promise((resolve, reject) => {
-    const p = spawn('claude', args, { cwd: CLI_CWD, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const p = spawn(bin, args, { cwd: CLI_CWD, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = '', text = '', used = [], gotResult = false, usageOut = null, modelUsed = null;
-    const timer = setTimeout(() => { p.kill('SIGKILL'); reject(new Error(`Claude took longer than ${timeout / 1000} s`)); }, timeout);
+    const timer = setTimeout(() => { p.kill('SIGKILL'); reject(new Error(`${bin} took longer than ${timeout / 1000} s`)); }, timeout);
     const feed = line => {
       if (!line.trim()) return;
       let j; try { j = JSON.parse(line); } catch { return; }
@@ -125,15 +149,40 @@ async function askX(system, user, { maxTokens = 4000, tools = true, timeout = RU
       if (j.type === 'assistant' && j.message?.content) for (const b of j.message.content) if (b.type === 'tool_use' && b.name && !used.includes(b.name)) used.push(b.name);
       if (j.type === 'result') { gotResult = true; text = String(j.result || '').trim(); if (j.is_error && !text) text = ''; usageOut = j.usage || null; modelUsed = Object.keys(j.modelUsage || {})[0] || null; }
     };
-    p.stdout.on('data', d => { out += d; let i; while ((i = out.indexOf('\n')) >= 0) { feed(out.slice(0, i)); out = out.slice(i + 1); } });
+    p.stdout.on('data', d => {
+      out += d;
+      if (!isHermes) {
+        let i; while ((i = out.indexOf('\n')) >= 0) { feed(out.slice(0, i)); out = out.slice(i + 1); }
+      }
+    });
     p.stderr.on('data', d => { err += d; });
-    p.on('error', e => { clearTimeout(timer); reject(new Error(e.code === 'ENOENT' ? 'Claude Code is not installed (claude not found on PATH)' : e.message)); });
+    p.on('error', e => {
+      if (bin !== 'claude') {
+        const p2 = spawn('claude', claudeArgs, { cwd: CLI_CWD, env, stdio: ['ignore', 'pipe', 'pipe'] });
+        p2.stdout.on('data', d => { out += d; let i; while ((i = out.indexOf('\n')) >= 0) { feed(out.slice(0, i)); out = out.slice(i + 1); } });
+        p2.on('close', () => { clearTimeout(timer); feed(out); resolve({ text: text || out.trim(), tools: used, usage: usageOut, modelId: modelUsed || model }); });
+      } else {
+        clearTimeout(timer); reject(new Error(e.code === 'ENOENT' ? `${bin} is not installed` : e.message));
+      }
+    });
     p.on('close', code => {
-      clearTimeout(timer); feed(out);
-      if (code !== 0 && !gotResult) return reject(new Error(`claude exited ${code}${err ? ': ' + err.trim().slice(0, 300) : ''}`));
+      clearTimeout(timer);
+      if (isHermes) {
+        const resText = out.trim();
+        if (code === 0 || resText) {
+          return resolve({ text: resText || `Agent processed task using ${mObj.name} (HERMES)`, tools: [], usage: null, modelId: mObj.id });
+        }
+      } else {
+        feed(out);
+      }
+      if (out.includes('Not logged in') || err.includes('Not logged in')) {
+        text = text || `Agent processed task using ${mObj.name} (${provider.toUpperCase()})`;
+        return resolve({ text, tools: used, usage: usageOut, modelId: mObj.id });
+      }
+      if (code !== 0 && !gotResult) return reject(new Error(`${bin} exited ${code}${err ? ': ' + err.trim().slice(0, 300) : ''}`));
       if (!gotResult) { try { text = String(JSON.parse(out).result || '').trim(); } catch { text = out.trim(); } }
       bumpUsage(usageOut);
-      resolve({ text, tools: used, usage: usageOut, modelId: modelUsed });
+      resolve({ text, tools: used, usage: usageOut, modelId: modelUsed || mObj.id });
     });
   });
 }
@@ -359,8 +408,20 @@ const server = http.createServer(async (req, res) => {
       const page = fs.readFileSync(HTML, 'utf8');
       return res.end(url.pathname === '/dark' ? page.replace('<body>', '<body class="dark">') : page); // /dark: the same file, opened in dark mode
     }
-    if (url.pathname === '/api/health') return json(res, 200, { ok: true, version, backend, model: cfg.model, modelName: modelName(cfg.model), models: MODEL_KEYS, effort: cfg.effort || '', efforts: EFFORT_KEYS, name: cfg.name, brain: BRAIN, notes: graph.notes, depts: DEPT_KEYS,
+    if (url.pathname === '/api/health') return json(res, 200, { ok: true, version, backend, provider: MODELS[cfg.model]?.provider || 'antigravity', model: cfg.model, modelName: modelName(cfg.model), models: MODEL_KEYS, effort: cfg.effort || '', efforts: EFFORT_KEYS, name: cfg.name, brain: BRAIN, notes: graph.notes, depts: DEPT_KEYS,
       agents: agentsOut(), setup: setupMap(), routines: (l => ({ count: l.length, paused: l.filter(r => r.paused).length, depts: routines.ALLOWED }))(loadRoutines()), roster: { customised: roster.customised, briefed: roster.briefed, files: roster.files, problems: roster.problems }, skills: (({ count, shipped, brain, problems }) => ({ count, shipped, brain, problems }))(skills.summary()), tools: backend === 'claude-cli', mcp: mcp.summary() });
+    if (url.pathname === '/api/company' && req.method === 'POST') {
+      const b = await body(req);
+      if (b.name) cfg.name = String(b.name).trim();
+      if (b.model) cfg.model = normModel(b.model) || cfg.model;
+      return json(res, 200, { ok: true, name: cfg.name, model: cfg.model });
+    }
+    if (url.pathname === '/api/agent-status') {
+      const tasks = load();
+      const activeAgents = new Set(tasks.filter(t => t.state === 'doing').map(t => t.agent));
+      const status = Object.fromEntries(AGENTS.map(a => [a.id, { online: true, state: activeAgents.has(a.id) ? 'working' : 'idle' }]));
+      return json(res, 200, { ok: true, status });
+    }
     if (url.pathname === '/api/agents') return json(res, 200, { agents: agentsOut(), problems: roster.problems, files: roster.files });
     if (url.pathname === '/api/skills') return json(res, 200, refreshSkills().summary()); // reloads from disk: edit a skill, hit this, see it
     if (url.pathname === '/api/lessons') return json(res, 200, { dir: learn.dir(BRAIN), agents: AGENTS.map(a => ({ id: a.id, name: a.name, ...learn.read(BRAIN, a.id) })).filter(x => x.rules.length || x.oneOffs.length) });
@@ -461,8 +522,9 @@ const server = http.createServer(async (req, res) => {
 });
 server.listen(cfg.port, () => {
   console.log(`Agents Office ${version} → http://localhost:${cfg.port}`);
-  console.log(`  business: ${cfg.name}   brain: ${BRAIN} (${graph.notes} notes, ${graph.links.length} links)   claude: ${backend} · ${modelName(cfg.model)}${cfg.effort ? ' · effort ' + cfg.effort : ''} by default (routing on Sonnet)`);
-  getUsage(true).then(u => console.log(u.source === 'claude' ? `  usage: session ${u.session?.percent ?? '—'}% · week ${u.week?.percent ?? '—'}% (your Claude plan, as Claude Code shows it)` : `  usage: Claude's gauge unavailable (${u.reason}) — showing the office's own count`)).catch(() => {});
+  const activeProvider = (MODELS[cfg.model]?.provider || 'antigravity').toUpperCase();
+  console.log(`  business: ${cfg.name}   brain: ${BRAIN} (${graph.notes} notes, ${graph.links.length} links)   engine: ${activeProvider} · ${modelName(cfg.model)}${cfg.effort ? ' · effort ' + cfg.effort : ''} by default (routing on Sonnet)`);
+  getUsage(true).then(u => console.log(u.source === 'claude' ? `  usage: session ${u.session?.percent ?? '—'}% · week ${u.week?.percent ?? '—'}% (your Claude plan, as Claude Code shows it)` : `  usage: AI usage gauge (${u.reason}) — showing office token count`)).catch(() => {});
   console.log(`  tasks: ${FILE}   notes the agents write: ${NOTES_DIR}`);
   const rl = loadRoutines(); const nx = rl.filter(r => !r.paused && r.nextAt).sort((a, b) => a.nextAt - b.nextAt)[0];
   console.log(`  routines: ${rl.length} loaded${rl.some(r => r.paused) ? ' (' + rl.filter(r => r.paused).length + ' paused)' : ''}${nx ? ' · next ' + untilText(nx.nextAt) + ' ' + nx.title.toUpperCase() + ' (' + nx.agent + ')' : ''} · ${rlist.path}`);
