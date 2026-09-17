@@ -1,16 +1,16 @@
 // Agents Office v2 — Three.js isometric office with zoom-driven LOD
 // Far: clean pods + agent counts (Image 1 read). Near: diorama with 3D people + holo screens (Image 2 read).
 import * as THREE from 'three';
-import { TOKENS, DEPTS, DEPT_KEYS, AGENTS, LAYOUT, WORKLINES, APPROVAL_ASKS, APPROVAL_BY_AGENT } from './data.js';
-import { V1, FILE_GEN, STATS, KPIS, P, rnd, ri, person, money } from './v1data.js';
+import { TOKENS, DEPTS, DEPT_KEYS, AGENTS, LAYOUT, WORKLINES, APPROVAL_ASKS, APPROVAL_BY_AGENT } from './data.ts';
+import { V1, FILE_GEN, STATS, KPIS, P, rnd, ri, person, money } from './v1data.ts';
 import {
   PLINTH_H, mat, rbox, makePlinth, makeFloorTitle, makeDesk, makeChair,
   makePerson, posePerson, poseWork, makePlant, makeServerRack, makeMeetingTable, makeWalkway, makeWarnSprite,
-} from './builders.js';
-import { initMcp } from './mcp.js';
-import { loadConnectors } from './connectors.js';
-import { initTasks } from './tasks.js';
-import { initBrain } from './brain.js';
+} from './builders.ts';
+import { initMcp } from './mcp.ts';
+import { loadConnectors } from './connectors.ts';
+import { initTasks } from './tasks.ts';
+import { initBrain } from './brain.ts';
 let tasks = null; // V3 task boards — initialised after the rail constants exist
 
 /* ---------- renderer / scene / camera ---------- */
@@ -123,92 +123,153 @@ const personTargets = [];  // person meshes -> agent id
 const R = {};              // runtime per agent
 const deptRT = {};         // runtime per dept
 const screenSets = [];
+const DEPT_AZ = {};
+const SWEEP_PERIOD = 16000; // ms per full orbit
+const COLS = { emails: 2, sales: 2, marketing: 2, ops: 2, fin: 2, delivery: 2 };
 
-for (const [key_, L] of Object.entries(LAYOUT)) {
+const kv = id => KPIS.find(k => k.id === id).val;
+const BB_ROWS = {
+  emails: [
+    ['EMAILS SENT', () => STATS.emailsSent],
+    ['REPLIES DRAFTED', () => STATS.drafts]],
+  delivery: [
+    ['REPORTS SENT', () => STATS.reports],
+    ['ON TRACK', () => STATS.onTrack + ' / ' + STATS.projects]],
+  sales: [
+    ['CALLS S·A·J', () => STATS.spencer + '·' + STATS.arwin + '·' + STATS.jack],
+    ['NEW MANAGERS', () => STATS.managers],
+    ['AUTO-ONBOARDED', () => STATS.autoOnb]],
+  marketing: [
+    ['NEW INSIGHTS', () => STATS.insMkt],
+    ['COST PER USER', () => '$' + Math.round(STATS.cpa)]],
+  ops: [
+    ['PROPOSALS MADE', () => Math.round(kv('proposals'))],
+    ['NEW INSIGHTS', () => STATS.insOps]],
+  fin: [
+    ['INVOICES ISSUED', () => Math.round(kv('invoices'))],
+    ['BILLS PAID', () => STATS.billsPaid]],
+  brain: [
+    ['NOTES INDEXED', () => brain ? brain.state.notes.toLocaleString('en-NZ') : '0']],
+};
+function getBbRows(k: string) {
+  if (BB_ROWS[k]) return BB_ROWS[k];
+  return [
+    ['ACTIVE AGENTS', () => AGENTS.filter(a => a.dept === k).length],
+    ['TASKS DONE', () => (typeof doneCount !== 'undefined' && doneCount[k]) || 0]
+  ];
+}
+
+function buildDeptBadge(k) {
+  if (!deptRT[k] || deptRT[k].badge) return;
+  const dept = DEPTS[k];
+  const rows = getBbRows(k);
+  const n = AGENTS.filter(a => a.dept === k).length;
+  const b = document.createElement('div');
+  b.className = 'badge';
+  b.innerHTML = `
+    <div class="b-name"><span class="dot" style="background:${dept.chip}"></span>${dept.short}<span class="live"></span></div>
+    <div class="b-count">${k === 'brain' ? '<span class="b-num">∞</span><span class="b-lab">KNOWLEDGE</span>' : `<span class="b-num">${n}</span><span class="b-lab">AGENTS</span>`}</div>
+    <div class="b-metrics">${rows.map((row, i) => `
+      <div class="m-row"><span class="m-lab">${row[0]}</span><span class="m-val" data-m="${k}-${i}">${row[1]()}</span></div>`).join('')}
+    </div>
+    <div class="b-appr" style="display:none">⚠ <span class="ap-n">1</span> WAITING APPROVAL</div>`;
+  b.addEventListener('click', (e) => {
+    if (e.target.closest('.b-appr')) { zoomToApproval(k); e.stopPropagation(); }
+    else if (e.target.closest('.b-tasks') && tasks) { tasks.openFor(k); e.stopPropagation(); }
+    else zoomToDept(k);
+  });
+  if (k === 'brain') {
+    b.className = 'badge brainTag';
+    b.innerHTML = `<div class="b-name"><span class="dot" style="background:${dept.chip}"></span>THE BRAIN<b>${brain ? brain.state.notes.toLocaleString('en-NZ') : 0}</b>NOTES</div>`;
+    b.onclick = (e) => { e.stopPropagation(); if (brain) brain.open(); };
+    b.title = 'open the Brain (G)';
+  }
+  hud.appendChild(b);
+  deptRT[k].badge = b;
+  deptRT[k].vals = rows.map(row => String(row[1]()));
+  deptRT[k].apprRow = b.querySelector('.b-appr');
+  deptRT[k].apprN = b.querySelector('.ap-n');
+  const ANCHOR = {
+    marketing: [-36, 8.6, 28.4],
+    emails:    [-30, 8.6, -32.6],
+    delivery:  [0, 10.6, -57.6],
+    sales:     [48, 8.6, -32],
+    ops:       [-13.5, 4, 54],
+    fin:       [43.5, 4, 17],
+    brain:     [-5.5, 3.2, -5.5],
+  };
+  const L = LAYOUT[k];
+  const anc = ANCHOR[k] || [L.pos[0] - 6, 8.6, L.pos[1] + (L.pos[1] >= 0 ? 5 : -5)];
+  deptRT[k].badgeAnchor = new THREE.Vector3(...anc);
+  if (k === 'fin') deptRT[k].sideBadge = true;
+  if (k === 'ops') { deptRT[k].sideBadge = true; deptRT[k].sideLeft = true; }
+}
+
+function buildDeptPod(key_) {
+  if (deptRT[key_]) return deptRT[key_];
+  const L = LAYOUT[key_];
+  if (!L) return null;
   const dept = DEPTS[key_];
   const g = new THREE.Group();
   g.position.set(L.pos[0], 0, L.pos[1]);
   const plinth = makePlinth(L.w, L.d, dept.floor);
   g.add(plinth);
   plinth.traverse(o => { if (o.isMesh) { o.userData.dept = key_; clickTargets.push(o); } });
-  plinth.children[0].userData.part = 'plinth'; plinth.children[1].userData.part = 'floor'; plinth.children[1].userData.chip = dept.chip; // dark mode re-tints these
+  plinth.children[0].userData.part = 'plinth'; plinth.children[1].userData.part = 'floor'; plinth.children[1].userData.chip = dept.chip;
 
-  // no floor titles — the billboards name each department (AJ's call, M2.3)
   scene.add(g);
   deptRT[key_] = { group: g, L };
-}
 
-// brain centre (V3.6, AJ 6 Sep 2026): the particle nebula is RETIRED. The vault's wiki-link graph
-// is etched into the pod floor (src/brain.js); reads glint, writes add notes, G opens the full graph.
-let brain;
-{
-  const bg = deptRT.brain.group;
-  brain = initBrain({ scene, brainGroup: bg, getR: () => R, esc: (t) => esc(t), hud, toScreen: (p) => toScreen(p), getCamera: () => camera });
-  const plant = makePlant(); plant.position.set(6.2, 0.12, -5.8); bg.add(plant);
-}
+  if (key_ !== 'brain') {
+    const sx = Math.sign(L.pos[0]) || 1, sz = Math.sign(L.pos[1]) || 1;
+    const from = [L.pos[0] - sx * (L.w / 2 - 1), L.pos[1] - sz * (L.d / 2 - 1)];
+    const to = [sx * 6.5, sz * 6.5];
+    const walk = makeWalkway(from, to);
+    walk.userData.dept = key_; walk.userData.part = 'walkway';
+    scene.add(walk);
+    deptRT[key_].gate = new THREE.Vector3(from[0], 0, from[1]);
+    deptRT[key_].brainGate = new THREE.Vector3(to[0], 0, to[1]);
 
-/* the thinking sweep (M4, D): a soft comet orbits the brain; as it passes each dept's
-   azimuth that dept "lights up" — brain particles lean toward its chip colour (handled in
-   makeNeuralBrain) and its billboard gets a chip-coloured glow. Ref: AJ's galaxy video,
-   departments highlighted one at a time. */
-const SWEEP_PERIOD = 16000; // ms per full orbit
-const DEPT_AZ = {};
-for (const k of DEPT_KEYS)
-  DEPT_AZ[k] = Math.atan2(LAYOUT[k].pos[1], LAYOUT[k].pos[0]);
-function tickSweep(now) {
-  // the sweep is overview theatre — it bows out while a dept is focused
-  const on = (!focused || focused === 'brain') ? 1 : 1 - focusDim;
-  const theta = (now % SWEEP_PERIOD) / SWEEP_PERIOD * Math.PI * 2;
-  let domDept = null, domS = 0;
-  for (const [k, az] of Object.entries(DEPT_AZ)) {
-    const d = Math.atan2(Math.sin(theta - az), Math.cos(theta - az));
-    let s = Math.max(0, 1 - Math.abs(d) / 0.7);
-    s = s * s * (3 - 2 * s) * on;
-    if (s > domS) { domS = s; domDept = k; }
-    const b = deptRT[k].badge;
-    if (s > 0.55 && !b.classList.contains('sweepglow')) {
-      b.style.setProperty('--sw', DEPTS[k].chip);
-      b.classList.add('sweepglow');
-    } else if (s <= 0.35 && b.classList.contains('sweepglow')) b.classList.remove('sweepglow');
+    const plant = makePlant();
+    plant.position.set(L.pos[0] + sx * (L.w / 2 - 1.6), 0.12, L.pos[1] + sz * (L.d / 2 - 1.6));
+    plant.traverse(o => { if (o.isMesh) o.userData.dept = key_; });
+    scene.add(plant);
+
+    DEPT_AZ[key_] = Math.atan2(L.pos[1], L.pos[0]);
   }
-  // (the M4 orbiting comet is retired per AJ — the sweep now shows only as the badge glow
-  //  + the brain particles leaning toward the visiting dept's colour)
-  return { theta, strength: domS, col: domDept ? DEPTS[domDept].chip : '#FFFFFF' };
+
+  buildDeptBadge(key_);
+
+  if (typeof darkOn !== 'undefined' && darkOn) {
+    g.traverse(o => {
+      if (!o.isMesh || !o.userData.part) return;
+      const m = o.material; if (!m.userData.base) m.userData.base = m.color.clone();
+      if (o.userData.part === 'plinth') m.color.set(DARK.plinth);
+      else if (o.userData.part === 'floor') m.color.copy(mix(o.userData.chip, '#1b1c1a', key_ === 'brain' ? 0.07 : 0.22));
+    });
+  }
+
+  return deptRT[key_];
 }
 
-// walkways dept -> brain
-for (const k of DEPT_KEYS) {
-  const L = LAYOUT[k];
-  const sx = Math.sign(L.pos[0]), sz = Math.sign(L.pos[1]);
-  const from = [L.pos[0] - sx * (L.w / 2 - 1), L.pos[1] - sz * (L.d / 2 - 1)];
-  const to = [sx * 6.5, sz * 6.5];
-  const walk = makeWalkway(from, to);
-  walk.userData.dept = k; walk.userData.part = 'walkway';
-  scene.add(walk);
-  deptRT[k].gate = new THREE.Vector3(from[0], 0, from[1]);
-  deptRT[k].brainGate = new THREE.Vector3(to[0], 0, to[1]);
-}
-// tag remaining brain furnishings (plinth, plant) for the focus-dim pass — these DO go
-// dark in galaxy mode, unlike the 'brainCore' nebula tagged above
-deptRT.brain.group.traverse(o => { if ((o.isMesh || o.isSprite) && !o.userData.dept) o.userData.dept = 'brain'; });
-
-/* (M5.3 per AJ: the bridge cables are gone — the walkways alone carry the connection;
-   the brain↔dept relationship shows through the badge sweep + meetings.) */
-
-/* desks + people per dept */
-const COLS = { emails: 2, sales: 2, marketing: 2, ops: 2, fin: 2, delivery: 2 };
-for (const a of AGENTS) {
-  const dRT = deptRT[a.dept];
+function buildAgent3D(a) {
+  if (R[a.id]) return;
+  const dRT = deptRT[a.dept] || buildDeptPod(a.dept);
+  if (!dRT) return;
   const dept = DEPTS[a.dept];
   const L = dRT.L;
-  const cols = COLS[a.dept];
-  const gx = (a.grid[0] - (cols - 1) / 2) * 8.6;
-  const gz = (a.grid[1] - 1) * 6.4 - 1;
+  const cols = COLS[a.dept] || 2;
+
+  const deptAgents = AGENTS.filter(x => x.dept === a.dept);
+  const agentIdx = deptAgents.indexOf(a);
+  const grid = a.grid || [(agentIdx % cols), Math.floor(agentIdx / cols) + 1];
+
+  const gx = (grid[0] - (cols - 1) / 2) * 8.6;
+  const gz = (grid[1] - 1) * 6.4 - 1;
   const base = new THREE.Vector3(L.pos[0] + gx, 0.12, L.pos[1] + gz);
 
-  // whole station rotated 45° so monitor screens face the camera square-on
   const ANG = Math.PI / 4;
-  const rot = (v) => v.applyAxisAngle(new THREE.Vector3(0, 1, 0), ANG);
+  const rot = (v) => v.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), ANG);
 
   const station = new THREE.Group();
   station.position.copy(base);
@@ -219,12 +280,12 @@ for (const a of AGENTS) {
   const chair = makeChair();
   chair.position.set(0, 0, 1.75);
   station.add(chair);
-  station.traverse(o => { if (o.isMesh) o.userData.dept = a.dept; }); // focus-dim tagging
+  station.traverse(o => { if (o.isMesh) o.userData.dept = a.dept; });
   scene.add(station);
 
-  const person = makePerson({ hair: a.hair, skin: a.skin, chip: dept.chip, lead: a.lead });
+  const person = makePerson({ hair: a.hair || '#1f1f1f', skin: a.skin || '#F0C9A0', chip: dept.chip, lead: a.lead });
   person.position.copy(base).add(rot(new THREE.Vector3(0, 0, 1.7)));
-  person.rotation.y = ANG + Math.PI; // face the monitor
+  person.rotation.y = ANG + Math.PI;
   person.traverse(o => { if (o.isMesh) { o.userData.agentId = a.id; o.userData.dept = a.dept; personTargets.push(o); } });
   scene.add(person);
 
@@ -232,7 +293,6 @@ for (const a of AGENTS) {
   warn.visible = false;
   scene.add(warn);
 
-  // name pill (HTML) — clickable, same as clicking the agent
   const pill = document.createElement('div');
   pill.className = 'pill';
   pill.innerHTML = (a.lead ? '<span class="star">★</span>' : '') + a.name;
@@ -243,9 +303,80 @@ for (const a of AGENTS) {
     a, person, warn, pill, seat: person.position.clone(), seatRot: ANG + Math.PI,
     stand: person.position.clone().add(rot(new THREE.Vector3(1.5, 0, 0.15))),
     state: 'working', bob: Math.random() * 10, path: null, pathI: 0, speed: 9.5, ask: null,
-    v1: V1.find(x => x.id === a.id), feed: [],
+    v1: V1.find(x => x.id === a.id) || { id: a.id, name: a.name, greeting: `Hello, I am ${a.name}.` },
+    feed: [],
   };
 }
+
+function refresh3D() {
+  for (const k of DEPT_KEYS) {
+    if (!deptRT[k]) {
+      buildDeptPod(k);
+    } else if (deptRT[k].badge) {
+      const cntEl = deptRT[k].badge.querySelector('.b-num');
+      if (cntEl && k !== 'brain') {
+        cntEl.textContent = String(AGENTS.filter(a => a.dept === k).length);
+      }
+    }
+  }
+  for (const a of AGENTS) {
+    if (!R[a.id]) {
+      buildAgent3D(a);
+    }
+  }
+}
+
+function removeDeptPod(key_) {
+  const dRT = deptRT[key_];
+  if (!dRT) return;
+  if (dRT.group) scene.remove(dRT.group);
+  if (dRT.badge && dRT.badge.parentNode) dRT.badge.parentNode.removeChild(dRT.badge);
+  delete deptRT[key_];
+  delete DEPT_AZ[key_];
+}
+
+function removeAgent3D(id) {
+  const r = R[id];
+  if (!r) return;
+  if (r.person) scene.remove(r.person);
+  if (r.warn) scene.remove(r.warn);
+  if (r.pill && r.pill.parentNode) r.pill.parentNode.removeChild(r.pill);
+  delete R[id];
+}
+
+// Initial 3D pods & agents build
+for (const key_ of [...DEPT_KEYS, 'brain']) buildDeptPod(key_);
+for (const a of AGENTS) buildAgent3D(a);
+
+// brain centre
+let brain;
+{
+  const bg = deptRT.brain.group;
+  brain = initBrain({ scene, brainGroup: bg, getR: () => R, esc: (t) => esc(t), hud, toScreen: (p) => toScreen(p), getCamera: () => camera });
+  const plant = makePlant(); plant.position.set(6.2, 0.12, -5.8); bg.add(plant);
+}
+
+function tickSweep(now) {
+  const on = (!focused || focused === 'brain') ? 1 : 1 - focusDim;
+  const theta = (now % SWEEP_PERIOD) / SWEEP_PERIOD * Math.PI * 2;
+  let domDept = null, domS = 0;
+  for (const [k, az] of Object.entries(DEPT_AZ)) {
+    const d = Math.atan2(Math.sin(theta - az), Math.cos(theta - az));
+    let s = Math.max(0, 1 - Math.abs(d) / 0.7);
+    s = s * s * (3 - 2 * s) * on;
+    if (s > domS) { domS = s; domDept = k; }
+    const b = deptRT[k] ? deptRT[k].badge : null;
+    if (!b) continue;
+    if (s > 0.55 && !b.classList.contains('sweepglow')) {
+      b.style.setProperty('--sw', DEPTS[k].chip);
+      b.classList.add('sweepglow');
+    } else if (s <= 0.35 && b.classList.contains('sweepglow')) b.classList.remove('sweepglow');
+  }
+  return { theta, strength: domS, col: domDept ? DEPTS[domDept].chip : '#FFFFFF' };
+}
+
+// tag remaining brain furnishings
+deptRT.brain.group.traverse(o => { if ((o.isMesh || o.isSprite) && !o.userData.dept) o.userData.dept = 'brain'; });
 
 /* CONNECTORS — per-dept dock of MCP logos with back-and-forth traffic (AJ's spec, 2 Aug rev 2)
    V3.1: served, the list is the user's REAL MCP servers (GET /api/mcp) — the strip waits for it.
@@ -312,90 +443,20 @@ function tickDim(dt) {
 }
 
 /* ---------- department billboards — v1's exact agreed metric rows + amber approval row ---------- */
-const kv = id => KPIS.find(k => k.id === id).val;
-let brainNotes = brain.state.notes;
-const BB_ROWS = {
-  emails: [
-    ['EMAILS SENT', () => STATS.emailsSent],
-    ['REPLIES DRAFTED', () => STATS.drafts]],
-  delivery: [
-    ['REPORTS SENT', () => STATS.reports],
-    ['ON TRACK', () => STATS.onTrack + ' / ' + STATS.projects]],
-  sales: [
-    ['CALLS S·A·J', () => STATS.spencer + '·' + STATS.arwin + '·' + STATS.jack],
-    ['NEW MANAGERS', () => STATS.managers],
-    ['AUTO-ONBOARDED', () => STATS.autoOnb]],
-  marketing: [
-    ['NEW INSIGHTS', () => STATS.insMkt],
-    ['COST PER USER', () => '$' + Math.round(STATS.cpa)]],
-  ops: [
-    ['PROPOSALS MADE', () => Math.round(kv('proposals'))],
-    ['NEW INSIGHTS', () => STATS.insOps]],
-  fin: [
-    ['INVOICES ISSUED', () => Math.round(kv('invoices'))],
-    ['BILLS PAID', () => STATS.billsPaid]],
-  brain: [
-    ['NOTES INDEXED', () => brainNotes.toLocaleString('en-NZ')]],
-};
-for (const k of [...DEPT_KEYS, 'brain']) {
-  const dept = DEPTS[k];
-  const n = AGENTS.filter(a => a.dept === k).length;
-  const b = document.createElement('div');
-  b.className = 'badge';
-  b.innerHTML = `
-    <div class="b-name"><span class="dot" style="background:${dept.chip}"></span>${dept.short}<span class="live"></span></div>
-    <div class="b-count">${k === 'brain' ? '<span class="b-num">∞</span><span class="b-lab">KNOWLEDGE</span>' : `<span class="b-num">${n}</span><span class="b-lab">AGENTS</span>`}</div>
-    <div class="b-metrics">${BB_ROWS[k].map((row, i) => `
-      <div class="m-row"><span class="m-lab">${row[0]}</span><span class="m-val" data-m="${k}-${i}">${row[1]()}</span></div>`).join('')}
-    </div>
-    <div class="b-appr" style="display:none">⚠ <span class="ap-n">1</span> WAITING APPROVAL</div>`;
-  b.addEventListener('click', (e) => {
-    if (e.target.closest('.b-appr')) { zoomToApproval(k); e.stopPropagation(); }
-    else if (e.target.closest('.b-tasks') && tasks) { tasks.openFor(k); e.stopPropagation(); }
-    else zoomToDept(k);
-  });
-  if (k === 'brain') { // V3.6: a small tag names the etched floor and opens the graph (the big card stays retired)
-    b.className = 'badge brainTag';
-    b.innerHTML = `<div class="b-name"><span class="dot" style="background:${dept.chip}"></span>THE BRAIN<b>${brain.state.notes.toLocaleString('en-NZ')}</b>NOTES</div>`;
-    b.onclick = (e) => { e.stopPropagation(); brain.open(); };
-    b.title = 'open the Brain (G)';
-  }
-  hud.appendChild(b);
-  deptRT[k].badge = b;
-  deptRT[k].vals = BB_ROWS[k].map(row => String(row[1]()));
-  deptRT[k].apprRow = b.querySelector('.b-appr');
-  deptRT[k].apprN = b.querySelector('.ap-n');
-  // anchor just above the FIRST DESK ROW (z-9.6), not the pod edge — keeps the card-to-agents
-  // gap consistent across pods of different depths. Support docks to the side instead: its
-  // natural spot is off-screen at overview and the clamp used to shove it onto its agents.
-  // V3.2 (AJ): every card sits ON its own pod, over the wiring — screen-tuned per pod at the
-  // 0.84 overview. Standard = centred above the anchor (back corner, y clears the pills);
-  // side = hangs off the pod's edge, vertically centred (fin: its back corner is the Brain;
-  // ops: its back corner is the marketing pod's front row).
-  const ANCHOR = {
-    marketing: [-36, 8.6, 13.4],
-    emails:    [-30, 8.6, -32.6],
-    delivery:  [0, 10.6, -57.6],   // y 10.6: the top-bar clamp otherwise lands it on the back-row pills
-    sales:     [48, 8.6, -32],     // over the pod's right corner — past the DELIVERY pod's desks and the Sales Lead pill
-    ops:       [-13.5, 4, 54],     // side LEFT
-    fin:       [43.5, 4, 17],      // side RIGHT
-    brain:     [-5.5, 3.2, -5.5],  // just above the pod's back corner
-  };
-  deptRT[k].badgeAnchor = new THREE.Vector3(...ANCHOR[k]);
-  if (k === 'fin') deptRT[k].sideBadge = true;
-  if (k === 'ops') { deptRT[k].sideBadge = true; deptRT[k].sideLeft = true; }
-}
+
 function updateBillboards() {
-  for (const k of Object.keys(BB_ROWS)) {
-    BB_ROWS[k].forEach((row, i) => {
+  for (const k of DEPT_KEYS) {
+    const rows = getBbRows(k);
+    if (!deptRT[k] || !deptRT[k].vals) continue;
+    rows.forEach((row, i) => {
       const nv = String(row[1]());
       if (nv !== deptRT[k].vals[i]) {
         deptRT[k].vals[i] = nv;
-        const el = deptRT[k].badge.querySelector(`[data-m="${k}-${i}"]`);
-        if (!el) return; // the brain tag carries no metric rows
+        const el = deptRT[k].badge ? deptRT[k].badge.querySelector(`[data-m="${k}-${i}"]`) : null;
+        if (!el) return;
         el.textContent = nv;
         el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
-        const rel = document.querySelector(`[data-rm="${k}-${i}"]`); // docked rail copy
+        const rel = document.querySelector(`[data-rm="${k}-${i}"]`);
         if (rel) {
           rel.textContent = nv;
           rel.classList.remove('flash'); void rel.offsetWidth; rel.classList.add('flash');
@@ -713,7 +774,7 @@ function buildDeptRail(k) {
   rh.innerHTML = `
     <div class="b-name"><span class="dot" style="background:${dept.chip}"></span>${dept.name}<span class="live"></span></div>
     <div class="b-count"><span class="b-num">${n}</span><span class="b-lab">AGENTS</span></div>
-    <div class="b-metrics">${BB_ROWS[k].map((row, i) => `
+    <div class="b-metrics">${getBbRows(k).map((row, i) => `
       <div class="m-row"><span class="m-lab">${row[0]}</span><span class="m-val" data-rm="${k}-${i}">${row[1]()}</span></div>`).join('')}</div>
     ${tasks ? tasks.rowHTML(k) : ''}
     <div class="b-appr" style="display:${stuckIn(k).length ? 'flex' : 'none'}">⚠ <span class="ap-n">${stuckIn(k).length}</span> WAITING APPROVAL</div>`;
@@ -1031,7 +1092,7 @@ function fireAgentEvent(seedTs) {
     }
     else if (d === 'ops' && roll < 0.22) STATS.insOps++;
     else if (d === 'fin' && roll < 0.3) STATS.billsPaid++;
-    if (ev.brain || Math.random() < 0.12) { brainNotes++; brain.read(r.a.id); } // the Brain shows the read
+    if (ev.brain || Math.random() < 0.12) { if (brain) brain.state.notes++; brain.read(r.a.id); } // the Brain shows the read
     updateBillboards();
     if (modalOpen === r.a.id && modalTab === 'activity') renderActivity(r.a.id);
   }
@@ -1350,7 +1411,7 @@ tasks = initTasks({
   requestApproval, setStuck: setStuckLive,
   onUsage: (u) => { if (mcp && mcp.setUsage) mcp.setUsage(u); }, // V3.6: the plan's gauge in the top bar
   getFocused: () => focused, getZoom: () => view.zoom, getFocusDim: () => focusDim,
-  toScreen: (p) => toScreen(p), reframe,
+  toScreen: (p) => toScreen(p), reframe, refresh3D, removeDeptPod, removeAgent3D,
 });
 view.target.set(...overviewPos());
 addEventListener('resize', () => { if (!focused && !tween) view.target.set(...overviewPos()); });
@@ -1382,6 +1443,128 @@ resize();
 window.CC = { flyTo, zoomToDept, zoomOut, zoomToApproval, requestApproval, openAgent, view, applyCamera, R, emotes,
   setCam, setDark, brain, connectorReveal: () => mcp.startReveal(performance.now()),
   toggleBoard: () => tasks.toggle(), addTask: (agentId, title) => tasks.addTask(agentId, title), tasks, routines: () => tasks.routines };
+
+function initDeptManager() {
+  const btn = document.getElementById('deptManagerBtn');
+  const modal = document.getElementById('deptModal');
+  const closeBtn = document.getElementById('deptModalClose');
+  const container = document.getElementById('deptListContainer');
+  const form = document.getElementById('newDeptForm');
+
+  if (!btn || !modal) return;
+
+  function renderDepts(deptsData) {
+    if (!container) return;
+    const depts = deptsData.depts || {};
+    const keys = deptsData.keys || DEPT_KEYS;
+    container.innerHTML = keys.map(k => {
+      const d = depts[k] || { name: k.toUpperCase(), chip: '#8FD3F4', ink: '#2E86AB', model: '' };
+      const isCustom = !['emails', 'sales', 'marketing', 'ops', 'fin', 'delivery', 'brain'].includes(k);
+      return `
+        <div class="dept-card">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="width: 10px; height: 10px; border-radius: 50%; background: ${d.chip || '#8FD3F4'}; display: inline-block;"></span>
+              <span style="font-weight: 700; font-size: 11px; letter-spacing: 0.1em;">${d.name || k.toUpperCase()}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 9px; color: var(--grey); letter-spacing: 0.1em;">KEY: ${k}</span>
+              ${isCustom ? `<button data-disband="${k}" class="dept-disband-btn" style="background:#e6939322; color:#C46060; border:1px solid #C4606044; border-radius:4px; padding:2px 8px; font-size:9px; font-weight:700; cursor:pointer;">DISBAND</button>` : ''}
+            </div>
+          </div>
+          <div style="margin-top: 6px;">
+            <label style="font-size: 8.5px; color: var(--grey); letter-spacing: 0.1em; text-transform: uppercase;">Assigned AI Model:</label>
+            <select data-dept="${k}" class="dept-model-select dept-select">
+              <option value="" ${!d.model ? 'selected' : ''}>Office Default (Antigravity Flash)</option>
+              <option value="antigravity-flash" ${d.model === 'antigravity-flash' ? 'selected' : ''}>Antigravity Flash 3.6</option>
+              <option value="antigravity-pro" ${d.model === 'antigravity-pro' ? 'selected' : ''}>Antigravity Pro 3.5</option>
+              <option value="antigravity-thinking" ${d.model === 'antigravity-thinking' ? 'selected' : ''}>Antigravity Thinking 3.1</option>
+              <option value="sonnet" ${d.model === 'sonnet' ? 'selected' : ''}>Sonnet</option>
+              <option value="opus" ${d.model === 'opus' ? 'selected' : ''}>Opus</option>
+              <option value="fable" ${d.model === 'fable' ? 'selected' : ''}>Fable</option>
+              <option value="hermes-3-70b" ${d.model === 'hermes-3-70b' ? 'selected' : ''}>Hermes 3 (70B)</option>
+            </select>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    container.querySelectorAll('.dept-disband-btn').forEach(b => {
+      b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const k = e.target.getAttribute('data-disband');
+        if (confirm(`Are you sure you want to disband department ${k.toUpperCase()}? All agents in this department will be removed.`)) {
+          if (tasks && tasks.disbandDepartment) {
+            await tasks.disbandDepartment(k);
+            loadDepts();
+          }
+        }
+      });
+    });
+
+    container.querySelectorAll('.dept-model-select').forEach(sel => {
+      sel.addEventListener('change', async (e) => {
+        const k = e.target.getAttribute('data-dept');
+        const model = e.target.value;
+        const cur = depts[k] || {};
+        await fetch('/api/departments', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ key: k, name: cur.name, chip: cur.chip, ink: cur.ink, model })
+        });
+      });
+    });
+  }
+
+  async function loadDepts() {
+    try {
+      const res = await fetch('/api/departments');
+      if (res.ok) {
+        const data = await res.json();
+        renderDepts(data);
+      }
+    } catch (e) { console.warn('Could not load departments:', e); }
+  }
+
+  btn.addEventListener('click', () => {
+    modal.classList.add('on');
+    modal.style.display = 'flex';
+    loadDepts();
+  });
+
+  if (closeBtn) closeBtn.addEventListener('click', () => { modal.classList.remove('on'); modal.style.display = 'none'; });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display !== 'none') { modal.classList.remove('on'); modal.style.display = 'none'; } });
+
+  if (form) {
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const name = document.getElementById('ndName').value;
+      const key = document.getElementById('ndKey').value;
+      const leadName = document.getElementById('ndLead').value;
+      const model = document.getElementById('ndModel').value;
+      const chip = document.getElementById('ndChip').value;
+
+      try {
+        const res = await fetch('/api/departments', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name, key, leadName, model, chip })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          form.reset();
+          if (tasks && tasks.syncDepartments) tasks.syncDepartments(data);
+          if (tasks && tasks.syncAgents) tasks.syncAgents(data.agents);
+          refresh3D();
+          loadDepts();
+          alert(`Department ${name} created successfully!`);
+        }
+      } catch (err) { console.error(err); }
+    });
+  }
+}
+initDeptManager();
+
 
 let last = performance.now();
 function loop(now) {

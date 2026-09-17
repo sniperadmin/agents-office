@@ -10,7 +10,7 @@
 // the roster's tool preferences; onToolsUsed() lights the wire an agent actually pulled on.
 // Opened as a file (no server) the demo list below still plays.
 import * as THREE from 'three';
-import { MCP_LOGOS, MCP_BY_DEPT } from './mcplogos.js';
+import { MCP_LOGOS, MCP_BY_DEPT } from './mcplogos.ts';
 
 // agent → tools they'd plausibly be driving (falls back to any connector in the dept's dock)
 export const AGENT_MCP = {
@@ -97,7 +97,8 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
 
   for (const [dept, keys] of Object.entries(BY_DEPT)) {
     const L = LAYOUT[dept];
-    const D = DOCKS[dept];
+    if (!L) continue;
+    const D = DOCKS[dept] || { dir: SR.clone().negate(), dist: 12.5, h: 8.0 };
     const glowT = glowTexture(DEPTS[dept].chip);
     const anchor = new THREE.Vector3(
       L.pos[0] + D.dir.x * D.dist, D.h, L.pos[1] + D.dir.z * D.dist);
@@ -666,7 +667,9 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
     // current dock anchor per dept: overview anchor, lerped to the focus anchor (if any)
     // by focusDim while that dept is focused
     const anchorOf = (dept, out) => {
-      const D = DOCKS[dept], L = LAYOUT[dept];
+      const D = DOCKS[dept] || { dir: SR.clone().negate(), dist: 12.5, h: 8.0 };
+      const L = LAYOUT[dept];
+      if (!L) return out;
       const k = (focused === dept && D.fdir) ? focusDim : 0;
       const fd = D.fdir || D.dir, fdist = D.fdist ?? D.dist, fh = D.fh ?? D.h;
       return out.set(

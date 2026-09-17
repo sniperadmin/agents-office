@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { ROOT } from '../config.mjs';
+import { ROOT } from '../config.ts';
 
 const PUBLIC = 'git@github.com:ajsahni/agents-office.git';
 const AUTHOR = ['AJ Sahni', '32712407+ajsahni@users.noreply.github.com'];

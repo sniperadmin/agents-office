@@ -14,10 +14,10 @@
 // SCHEDULED → BACKLOG → IN PROGRESS → (WAITING ON APPROVAL) → DONE. A draft that needs the owner's
 // OK makes the agent stand and wave; APPROVE sends it, REJECT + a note reworks it. Demo (file://):
 // session-only routines fired by this tick.
-import { DEPTS, AGENTS, DEPT_KEYS } from './data.js';
-import { P, rnd, ri } from './v1data.js';
-import { parseWhen, describe, nextRun, fromPicker, untilText } from './when.js';
-import { MODEL_KEYS, MODELS, DEFAULT_MODEL, modelName, normModel, FROM_TEXT , EFFORT_KEYS, EFFORT_NAME, normEffort, effortName, effortFor } from './models.js';
+import { DEPTS, AGENTS, DEPT_KEYS } from './data.ts';
+import { P, rnd, ri } from './v1data.ts';
+import { parseWhen, describe, nextRun, fromPicker, untilText } from './when.ts';
+import { MODEL_KEYS, MODELS, DEFAULT_MODEL, modelName, normModel, FROM_TEXT , EFFORT_KEYS, EFFORT_NAME, normEffort, effortName, effortFor } from './models.ts';
 
 const SEGMENTS = ['roofing', 'HVAC', 'dental', 'logistics', 'fitness', 'property', 'landscaping', 'legal'];
 
@@ -155,9 +155,10 @@ export function initTasks(ctx) {
   const deptTasks = (k, st) => tasks.filter(t => t.dept === k && t.state === st);
   function visibleTitles(id) { return new Set(tasks.filter(t => t.agent === id && t.state !== 'done').map(t => t.title)); }
   function pick(id) {
+    const pool = POOL[id] || POOL.olead || ['Perform operational sync and update status'];
     const seen = visibleTitles(id);
-    for (let i = 0; i < 4; i++) { const t = fill(rnd(POOL[id]), vars()); if (!seen.has(t)) return t; }
-    return fill(rnd(POOL[id]), vars());
+    for (let i = 0; i < 4; i++) { const t = fill(rnd(pool), vars()); if (!seen.has(t)) return t; }
+    return fill(rnd(pool), vars());
   }
   // a fresh piece of work for an agent: sometimes the first step of a handoff chain
   function freshTask(id, extra = {}) {
@@ -214,33 +215,39 @@ export function initTasks(ctx) {
     return t;
   }
 
-  /* ---------- seed a believable morning ---------- */
+  const isCheck = typeof window !== 'undefined' && window.location && window.location.search.includes('s=check');
+
+  /* ---------- seed task list ---------- */
   {
-    const now = performance.now(), wall = Date.now();
-    for (const a of AGENTS) {
-      const r = R[a.id];
-      { // everyone is mid-task at boot: the first frame must not be a column of "just now · 3%"
-        const t = freshTask(a.id);
-        start(t, now);
-        const k = 0.05 + Math.random() * 0.8;
-        t.startedAt = now - t.dur * k;
-        t.changedAt = wall - t.dur * k;
+    if (isCheck) {
+      const now = performance.now(), wall = Date.now();
+      for (const a of AGENTS) {
+        if (a.lead) {
+          const t = freshTask(a.id);
+          start(t, now);
+          const k = 0.05 + Math.random() * 0.8;
+          t.startedAt = now - t.dur * k;
+          t.changedAt = wall - t.dur * k;
+          
+          const tNext = mk({ agent: a.id, title: pick(a.id) });
+          tNext.addedAt = tNext.changedAt = wall - ri(8, 60) * 60000;
+          tNext.last = 'added';
+        }
       }
-      const nNext = a.lead ? ri(1, 2) : ri(0, 2);
-      for (let i = 0; i < nNext; i++) {
-        const t = mk({ agent: a.id, title: pick(a.id) });
-        t.addedAt = t.changedAt = wall - ri(8, 240) * 60000;
-        t.last = 'added';
+      for (const k of DEPT_KEYS) {
+        const ids = AGENTS.filter(a => a.dept === k).map(a => a.id);
+        if (ids.length) {
+          const id = ids[0], at = wall - ri(4, 120) * 60000;
+          mk({ agent: id, title: pick(id), state: 'done', doneAt: at, changedAt: at, addedAt: at - ri(20, 90) * 60000, last: 'done' });
+          doneCount[k] = 1;
+        } else {
+          doneCount[k] = 0;
+        }
       }
-    }
-    for (const k of DEPT_KEYS) {
-      const ids = AGENTS.filter(a => a.dept === k).map(a => a.id);
-      const n = ri(5, 9);
-      for (let i = 0; i < n; i++) {
-        const id = rnd(ids), at = wall - ri(4, 300) * 60000;
-        mk({ agent: id, title: pick(id), state: 'done', doneAt: at, changedAt: at, addedAt: at - ri(20, 90) * 60000, last: 'done' });
+    } else {
+      for (const k of DEPT_KEYS) {
+        doneCount[k] = 0;
       }
-      doneCount[k] = n;
     }
   }
 
@@ -318,10 +325,92 @@ export function initTasks(ctx) {
   [P_.cad, P_.at, P_.okc].forEach(el => el.addEventListener('keydown', e => e.stopPropagation()));
   const routineIntent = text => repeat ? { when: fromPicker(P_.cad.value, P_.at.value), text, picker: true } : parseWhen(text);
   let dept = 'marketing', filter = 'all';
-  P_.menu.innerHTML = DEPT_KEYS.map(k => `<button data-k="${k}"><span class="dot" style="background:${DEPTS[k].chip}"></span>${DEPTS[k].name}</button>`).join('');
-  P_.menu.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { setDept(b.dataset.k); P_.menu.classList.remove('on'); P_.input.focus(); }));
+  function renderDeptMenu() {
+    P_.menu.innerHTML = DEPT_KEYS.map(k => `<button data-k="${k}"><span class="dot" style="background:${DEPTS[k].chip}"></span>${DEPTS[k].name}</button>`).join('');
+    P_.menu.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { setDept(b.dataset.k); P_.menu.classList.remove('on'); P_.input.focus(); }));
+  }
+  renderDeptMenu();
   P_.dd.addEventListener('click', (e) => { e.stopPropagation(); P_.menu.classList.toggle('on'); });
   document.addEventListener('click', () => P_.menu.classList.remove('on'));
+
+  function syncDepartments(deptsData: any) {
+    if (!deptsData) return;
+    const depts = deptsData.depts || {};
+    const keys = deptsData.keys || [];
+    for (const k of keys) {
+      if (!DEPT_KEYS.includes(k)) DEPT_KEYS.push(k);
+      if (depts[k]) {
+        DEPTS[k] = {
+          name: depts[k].name || k.toUpperCase(),
+          short: depts[k].short || depts[k].name || k.toUpperCase(),
+          chip: depts[k].chip || '#8FD3F4',
+          ink: depts[k].ink || '#2E86AB',
+          floor: depts[k].floor || '#E6F4FB'
+        };
+      }
+    }
+    renderDeptMenu();
+    if (ctx.refresh3D) ctx.refresh3D();
+  }
+
+  function syncAgents(agentsList: any[]) {
+    if (!Array.isArray(agentsList)) return;
+    for (const a of agentsList) {
+      let existing = AGENTS.find(x => x.id === a.id);
+      if (!existing) {
+        AGENTS.push({
+          id: a.id,
+          name: a.name || a.id.toUpperCase(),
+          dept: a.department || a.dept || 'ops',
+          lead: !!a.lead,
+          grid: [0.5, 0],
+          hair: '#1f1f1f',
+          skin: '#F0C9A0',
+          role: a.role || '',
+          does: a.does || '',
+          tools: a.tools || [],
+          brief: a.brief || ''
+        });
+      } else {
+        Object.assign(existing, { name: a.name, role: a.role, does: a.does, tools: a.tools, brief: a.brief, dept: a.department || a.dept, lead: a.lead });
+      }
+    }
+    if (ctx && ctx.refresh3D) ctx.refresh3D();
+  }
+
+  async function disbandDepartment(deptKey: string) {
+    try {
+      const res = await fetch(`${API}/departments/${deptKey}`, { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        const kIdx = DEPT_KEYS.indexOf(deptKey);
+        if (kIdx >= 0) DEPT_KEYS.splice(kIdx, 1);
+        delete DEPTS[deptKey];
+        if (ctx.removeDeptPod) ctx.removeDeptPod(deptKey);
+        syncAgents(data.agents);
+        syncDepartments(data);
+        renderDeptMenu();
+        return true;
+      }
+    } catch (e) { console.warn('disbandDepartment:', e); }
+    return false;
+  }
+
+  async function removeAgent(agentId: string) {
+    try {
+      const res = await fetch(`${API}/agents/${agentId}`, { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        const aIdx = AGENTS.findIndex(a => a.id === agentId);
+        if (aIdx >= 0) AGENTS.splice(aIdx, 1);
+        if (ctx.removeAgent3D) ctx.removeAgent3D(agentId);
+        syncAgents(data.agents);
+        return true;
+      }
+    } catch (e) { console.warn('removeAgent:', e); }
+    return false;
+  }
+
   function setDept(k) {
     dept = k;
     P_.ddName.textContent = DEPTS[k].short;
@@ -351,7 +440,7 @@ export function initTasks(ctx) {
       const { agent: ra } = route(dept, rt.text || text);
       const need = rt.needsDay ? 'which day? say "every Monday …"' : rt.needsTime ? 'what time? add "at 8am"' : null;
       P_.hint.innerHTML = `<span class="tp-av" style="border-color:${DEPTS[ra.dept].chip};background:${DEPTS[ra.dept].chip}55">⏱</span>Routine · <b>${esc(describe(rt.when) || 'every week')}</b>` +
-        (need ? ` · <span class="tp-amber">${need}</span>` : live ? ' · Claude names the agent when you press Add' : ` · goes to <b>${ra.name}</b>`) + (rt.guessed ? ` · "${esc(rt.guessWord)}" taken as ${rt.when.at}` : '');
+        (need ? ` · <span class="tp-amber">${need}</span>` : live ? ' · engine assigns the agent when you press Add' : ` · goes to <b>${ra.name}</b>`) + (rt.guessed ? ` · "${esc(rt.guessWord)}" taken as ${rt.when.at}` : '');
       P_.hint.innerHTML += pickBit('routine');
       P_.hint.className = 'tp-hint on'; return;
     }
@@ -359,7 +448,7 @@ export function initTasks(ctx) {
     const busy = agentTasks(a.id, 'doing').length > 0 || R[a.id].state === 'stuck';
     const chip = DEPTS[a.dept].chip;
     P_.hint.innerHTML = `<span class="tp-av" style="border-color:${chip};background:${chip}55">${a.name[0]}</span>` +
-      (live ? `Probably <b>${a.name}</b> · Claude confirms when you press Add`
+      (live ? `Probably <b>${a.name}</b> · assigns when you press Add`
             : `Goes to <b>${a.name}</b> · ${busy ? 'starts after their current job' : 'starts straight away'}${matched ? '' : ' · say more and I’ll pick a specialist'}`) +
       pickBit('task');
     P_.hint.className = 'tp-hint on';
@@ -390,7 +479,7 @@ export function initTasks(ctx) {
     if (live) {
       const text = title, k = dept;
       P_.input.value = ''; P_.input.disabled = true; P_.add.disabled = true;
-      say(`Routing through Claude — ${DEPTS[k].name.toLowerCase()} is reading it…`, 'busy');
+      say(`Routing task — ${DEPTS[k].name.toLowerCase()} is reading it…`, 'busy');
       try {
         const mdl = chosenModel();
         const r = await fetch(API + '/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: k, text, model: mdl || undefined, effort: effortSend() }) });
@@ -402,7 +491,7 @@ export function initTasks(ctx) {
         say(`Added — <b>${agentOf(t.agent).name}</b> has it${st.why ? ' · ' + esc(st.why) : ''}`);
         setTimeout(() => { if (!P_.input.value) P_.hint.classList.remove('on'); }, 7000);
       } catch (e) {
-        say(`Claude couldn't take it (${esc(e.message)}). Kept it on the board.`, 'err');
+        say(`Engine couldn't take it (${esc(e.message)}). Kept it on the board.`, 'err');
         const { agent: a } = route(k, text); addTask(a.id, text, 'you');
       }
       P_.input.disabled = false; P_.add.disabled = false; P_.input.blur(); // hand the keys back to the office
@@ -426,7 +515,7 @@ export function initTasks(ctx) {
     if (!text) { say('What should happen? The sentence has a time but no task.', 'err'); return; }
     if (live) {
       P_.input.disabled = true; P_.add.disabled = true;
-      say('Setting the routine — Claude is naming the agent…', 'busy');
+      say('Setting the routine — engine is assigning the agent…', 'busy');
       try {
         const r = await fetch(API + '/routines', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: k, text, when: rt.when, needsOk: rt.picker ? P_.okc.checked : undefined, model: chosenModel() || undefined, effort: effortSend() }) });
         const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText);
@@ -435,7 +524,7 @@ export function initTasks(ctx) {
         say(`Routine set — <b>${a.name}</b> · ${esc(j.routine.desc)} · next ${esc(untilText(j.routine.nextAt))}${j.routine.needsOk ? ' · waits for your OK' : ' · read-only, no OK needed'}${j.guessed ? ` · "${esc(j.guessed)}" taken as ${j.routine.when.at}` : ''}`);
         P_.input.value = ''; resetModel(); spawnEmote(R[a.id], '⏱'); feedPush(R[a.id], '⏱', `New routine: ${j.routine.title} (${j.routine.desc})`);
         filter = 'sched'; render(true); poll();
-      } catch (e) { say(`Claude couldn't set it (${esc(e.message)}).`, 'err'); }
+      } catch (e) { say(`Engine couldn't set it (${esc(e.message)}).`, 'err'); }
       P_.input.disabled = false; P_.add.disabled = false; P_.input.blur();
       return;
     }
@@ -583,6 +672,11 @@ export function initTasks(ctx) {
       const h = await (await fetch(API + '/health')).json();
       if (!h.ok) return;
       live = true; setOfficeModel(h.model); setOfficeEffort(h.effort);
+      if (h.agents) syncAgents(h.agents);
+      try {
+        const dRes = await (await fetch(API + '/departments')).json();
+        if (dRes && dRes.ok) syncDepartments(dRes);
+      } catch {}
       const mode = panel.querySelector('.tp-mode');
       if (mode) {
         const engineLabel = (h.provider || 'antigravity').toUpperCase();
@@ -616,10 +710,21 @@ export function initTasks(ctx) {
   }
   // chips: filters with live counts
   const CHIPS = [['all', 'All'], ['sched', 'Scheduled'], ['next', 'Backlog'], ['doing', 'In progress'], ['waiting', 'Waiting'], ['done', 'Done']];
-  function chipsHTML() {
+  function renderChips() {
+    if (!P_.chips.children.length) {
+      P_.chips.innerHTML = CHIPS.map(([st, lab]) => `<button class="tp-chip${filter === st ? ' on' : ''}${st === 'waiting' ? ' w' : ''}" data-f="${st}">${lab}<b>0</b></button>`).join('');
+    }
     const scope = scoped();
     const cnt = st => st === 'all' ? scope.length : st === 'sched' ? scopedRoutines().length : scope.filter(t => t.state === st).length;
-    return CHIPS.map(([st, lab]) => `<button class="tp-chip${filter === st ? ' on' : ''}${st === 'waiting' ? ' w' : ''}" data-f="${st}">${lab}<b>${cnt(st)}</b></button>`).join('');
+    P_.chips.querySelectorAll('.tp-chip').forEach(b => {
+      const st = b.dataset.f;
+      b.classList.toggle('on', filter === st);
+      const bold = b.querySelector('b');
+      if (bold) {
+        const num = String(cnt(st));
+        if (bold.textContent !== num) bold.textContent = num;
+      }
+    });
   }
   P_.chips.addEventListener('click', (e) => { const b = e.target.closest('.tp-chip'); if (!b) return; filter = b.dataset.f; render(true); });
   function scoped() {
@@ -637,7 +742,7 @@ export function initTasks(ctx) {
         const w = now - t.addedAt;
         return `${who} · ${w < 60000 ? 'just added' : 'waiting ' + span(w)} · ${src}${modelBit(t)}`;
       }
-      case 'doing': return `${who}${t.live ? (t.approved === undefined && t.draftAt ? ' · sending with Claude' : ' · working with Claude') : t.agent === 'vid' ? ' · rendering' : ''}${t.routine ? ' · routine' : ''}${modelBit(t)}`;
+      case 'doing': return `${who}${t.live ? (t.approved === undefined && t.draftAt ? ' · sending' : ' · working') : t.agent === 'vid' ? ' · rendering' : ''}${t.routine ? ' · routine' : ''}${modelBit(t)}`;
       case 'waiting': return `<span class="tp-amber">waiting ${span(now - t.changedAt)} for your tick</span> · ${who}${t.routine ? ' · routine draft' : ''}${modelBit(t)}`;
       case 'done': return `${who} · done ${timeStr(t.doneAt)}${t.approved ? (t.live ? ' · sent after your OK' : ' · approved') : ''}${t.late ? ' · <span class="tp-late">ran late</span>' : ''}${modelBit(t)}${t.live ? (t.error ? ' · <span class="tp-amber">failed</span>' : ' · <span class="tp-res">result ready →</span>') : ''}`;
     }
@@ -683,7 +788,7 @@ export function initTasks(ctx) {
   function render(structural) {
     const f = getFocused();
     P_.scope.textContent = (f && f !== 'brain') ? DEPTS[f].name : 'WHOLE OFFICE';
-    P_.chips.innerHTML = chipsHTML();
+    renderChips();
     const list = scoped().filter(t => filter === 'all' || t.state === filter)
       .sort((a, b) => b.changedAt - a.changedAt).slice(0, 60);
     const before = structural ? {} : rects();
@@ -868,8 +973,10 @@ export function initTasks(ctx) {
       } else {
         const nx = agentTasks(id, 'next').sort((a, b) => a.addedAt - b.addedAt)[0];
         if (nx) { start(nx, now); r.nextBrainAt = null; }
-        else if (!r.nextBrainAt) r.nextBrainAt = now + 6000 + Math.random() * 16000;
-        else if (now > r.nextBrainAt) { r.nextBrainAt = null; brainSend(id); }
+        else if (isCheck) {
+          if (!r.nextBrainAt) r.nextBrainAt = now + 6000 + Math.random() * 16000;
+          else if (now > r.nextBrainAt) { r.nextBrainAt = null; brainSend(id); }
+        }
       }
     }
     if (now - lastBadge > 400) { syncBadges(); lastBadge = now; }
@@ -882,5 +989,5 @@ export function initTasks(ctx) {
 
   return { tick, toggle, open, close, openFor, isOpen, boardWidth, onFocusChange, onStuck, onResolve,
            handleChat, addTask, revise, rowHTML, setDept, tasks, panelWidth: () => panel.offsetWidth, isLive: () => live,
-           routines, addRoutine, rtAct, railFor, syncPills, refresh: poll, resolveLive, pendingReject, rejectLive, officeModel: () => officeModel, chosenModel, chosenEffort };
+           routines, addRoutine, rtAct, railFor, syncPills, refresh: poll, resolveLive, pendingReject, rejectLive, officeModel: () => officeModel, chosenModel, chosenEffort, syncDepartments, syncAgents, disbandDepartment, removeAgent };
 }

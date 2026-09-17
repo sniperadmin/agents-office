@@ -597,6 +597,8 @@
   /* the big editor: the same task box, room to write a brief */
   #tpBig { position: fixed; inset: 0; z-index: 26; display: none; align-items: center; justify-content: center; background: rgba(21,20,20,.42); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
   #tpBig.on { display: flex; }
+  #deptModal { position: fixed; inset: 0; z-index: 10000; display: none; align-items: center; justify-content: center; background: rgba(21,20,20,.54); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  #deptModal.on { display: flex !important; }
   .tb-box { width: min(760px, 92vw); height: min(560px, 84vh); background: #fff; border: 1.5px solid var(--ink); border-radius: 22px; box-shadow: 0 34px 90px rgba(21,20,20,.3);
     display: flex; flex-direction: column; padding: 14px 16px 12px; gap: 8px; animation: tbin .35s var(--ease); }
   @keyframes tbin { from { opacity: 0; transform: translateY(10px) scale(.985); } }
@@ -863,6 +865,61 @@
   body.dark #wires path, body.dark #wires circle { filter: brightness(1.15); }
   body.dark #vignette { background: radial-gradient(ellipse at 50% 45%, transparent 32%, rgba(0,0,0,.6) 100%); }
 
+  /* Department Manager Modal & Cards (Dark Mode support) */
+  .dept-card {
+    background: #fff;
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: background 0.3s var(--ease), border-color 0.3s var(--ease);
+  }
+  .dept-input, .dept-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    margin-top: 4px;
+    font-family: var(--ui);
+    font-size: 12px;
+    background: #fff;
+    color: var(--ink);
+    outline: none;
+    transition: border-color 0.3s var(--ease), background 0.3s var(--ease), color 0.3s var(--ease);
+  }
+  .dept-select {
+    padding: 6px 10px;
+  }
+  .dept-input:focus, .dept-select:focus {
+    border-color: var(--ink);
+  }
+  body.dark #deptModal {
+    background: rgba(0, 0, 0, 0.72);
+  }
+  body.dark #deptModal .tb-box {
+    background: #1B1C21;
+    border-color: var(--hairline);
+    color: var(--ink);
+  }
+  body.dark .dept-card {
+    background: #141518;
+    border-color: var(--hairline);
+  }
+  body.dark .dept-input, body.dark .dept-select {
+    background: #0F1013;
+    color: var(--ink);
+    border-color: var(--hairline);
+  }
+  body.dark .dept-input::placeholder {
+    color: var(--grey);
+  }
+  body.dark #newDeptForm button[type="submit"] {
+    background: var(--ink);
+    color: #15161A;
+  }
+
   /* dept floor titles — screen-space, always horizontal (camera-readability rule) */
   .floorlabel {
     position: absolute; left: 0; top: 0;
@@ -877,6 +934,7 @@
 <div id="hud"></div>
 <div id="topbar">
   <span class="brand">AGENTS OFFICE <span class="ver">V3</span></span>
+  <button id="deptManagerBtn" class="tag" style="cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:5px; pointer-events:auto; margin-left:6px;">🏢 DEPARTMENTS</button>
   <div id="topconn"></div>
   <span class="sp"></span>
   <div id="topmodels"></div>
@@ -970,6 +1028,65 @@
   <button id="zOut" title="zoom out (−)">−</button>
   <button id="zHome" title="overview (0)">⌂</button>
 </div>
+<!-- Department Manager Modal -->
+<div id="deptModal" class="tp-big">
+  <div class="tb-box" style="width: min(720px, 94vw); max-height: min(640px, 88vh); overflow-y: auto;">
+    <div class="tb-head">
+      <span class="dot" style="background:#5ADEB7"></span>
+      <span style="font-family: var(--serif); font-size: 18px;">DEPARTMENT MANAGER & ROSTER</span>
+      <span class="sp"></span>
+      <button id="deptModalClose" class="tb-close" title="Close (Esc)">✕</button>
+    </div>
+    
+    <div style="font-size: 11px; color: var(--grey); margin-bottom: 12px;">
+      Manage company departments, assign specific AI models to each department, and create new specialized teams.
+    </div>
+
+    <div id="deptListContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-bottom: 16px;">
+      <!-- Populated dynamically -->
+    </div>
+
+    <div style="border-top: 1px solid var(--hairline); padding-top: 14px; margin-top: 8px;">
+      <h4 style="font-family: var(--serif); font-size: 18px; margin-bottom: 10px; font-weight: 400;">+ Create New Department</h4>
+      <form id="newDeptForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div>
+          <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Department Name</label>
+          <input type="text" id="ndName" class="dept-input" placeholder="e.g. DEVELOPMENT" required>
+        </div>
+        <div>
+          <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Department Key</label>
+          <input type="text" id="ndKey" class="dept-input" placeholder="e.g. dev" required>
+        </div>
+        <div>
+          <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Lead Agent Name</label>
+          <input type="text" id="ndLead" class="dept-input" placeholder="e.g. DEV LEAD">
+        </div>
+        <div>
+          <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Default AI Model</label>
+          <select id="ndModel" class="dept-select">
+            <option value="antigravity-flash">Antigravity Flash 3.6</option>
+            <option value="antigravity-pro">Antigravity Pro 3.5</option>
+            <option value="antigravity-thinking">Antigravity Thinking 3.1</option>
+            <option value="sonnet">Sonnet</option>
+            <option value="opus">Opus</option>
+            <option value="fable">Fable</option>
+            <option value="hermes-3-70b">Hermes 3 (70B)</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Theme Color (Chip)</label>
+          <input type="color" id="ndChip" value="#8FD3F4" style="width:100%; height:36px; padding:2px; border:1px solid var(--hairline); border-radius:8px; margin-top:4px; cursor:pointer;">
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button type="submit" style="width:100%; padding:10px 16px; background:var(--ink); color:var(--cream); border:none; border-radius:99px; font-weight:600; font-size:11px; letter-spacing:0.1em; cursor:pointer;">
+            CREATE DEPARTMENT
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 <!--APP-->
 </body>
 </html>
+

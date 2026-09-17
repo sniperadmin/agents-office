@@ -6,7 +6,17 @@
 // V3.6.1 (10 Sep 2026): AJ asked for an EFFORT selection beside the model. Five levels as the CLI
 // names them; AUTO (empty) = the model's own default (Opus runs at high). Same four places, same
 // precedence as the model, then the model's own.
-export const MODELS = {
+
+export interface ModelDef {
+  key: string;
+  name: string;
+  flag: string;
+  id: string;
+  provider: 'anthropic' | 'antigravity' | 'hermes';
+  effort?: string;
+}
+
+export const MODELS: Record<string, ModelDef> = {
   sonnet: { key: 'sonnet', name: 'Sonnet', flag: 'sonnet', id: 'claude-sonnet-5', provider: 'anthropic' },
   opus:   { key: 'opus',   name: 'Opus',   flag: 'opus',   id: 'claude-opus-5', effort: 'high', provider: 'anthropic' },
   fable:  { key: 'fable',  name: 'Fable',  flag: 'fable',  id: 'claude-fable-5-1', provider: 'anthropic' },
@@ -17,13 +27,14 @@ export const MODELS = {
   'hermes-3-70b': { key: 'hermes-3-70b', name: 'Hermes 3 (70B)', flag: 'hermes-3-70b', id: 'hermes-3-llama-3.1-70b', provider: 'hermes' },
   'hermes-2-pro': { key: 'hermes-2-pro', name: 'Hermes 2 Pro', flag: 'hermes-2-pro', id: 'hermes-2-pro-mistral-7b', provider: 'hermes' },
 };
-export const MODEL_KEYS = ['sonnet', 'opus', 'fable', 'antigravity-flash', 'antigravity-pro', 'antigravity-thinking', 'hermes-3-405b', 'hermes-3-70b', 'hermes-2-pro'];
-export const DEFAULT_MODEL = 'hermes-3-70b';
-export const FROM_TEXT = { task: 'this task', routine: 'this routine', agent: 'this agent', dept: 'this department', office: 'office default', model: 'the model\'s own' };
-export const EFFORT_KEYS = ['low', 'medium', 'high', 'xhigh', 'max'];
-export const EFFORT_NAME = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-high', max: 'Max' };
 
-export const MODEL_ALIASES = {
+export const MODEL_KEYS: string[] = ['sonnet', 'opus', 'fable', 'antigravity-flash', 'antigravity-pro', 'antigravity-thinking', 'hermes-3-405b', 'hermes-3-70b', 'hermes-2-pro'];
+export const DEFAULT_MODEL = 'antigravity-flash';
+export const FROM_TEXT: Record<string, string> = { task: 'this task', routine: 'this routine', agent: 'this agent', dept: 'this department', office: 'office default', model: 'the model\'s own' };
+export const EFFORT_KEYS: string[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+export const EFFORT_NAME: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-high', max: 'Max' };
+
+export const MODEL_ALIASES: Record<string, string> = {
   flash: 'antigravity-flash',
   'gemini-flash': 'antigravity-flash',
   'gemini-3.6-flash': 'antigravity-flash',
@@ -53,49 +64,58 @@ export const MODEL_ALIASES = {
 };
 
 /** "High" · "xhigh" · "extra high" → the CLI level; empty/auto/unknown → null. */
-export function normEffort(s) {
+export function normEffort(s?: any): string | null {
   const t = String(s || '').toLowerCase().replace(/[\s_-]+/g, '').trim();
   if (!t || t === 'auto' || t === 'default') return null;
   if (t === 'extrahigh' || t === 'veryhigh') return 'xhigh';
   if (t === 'maximum') return 'max';
   return EFFORT_KEYS.includes(t) ? t : null;
 }
-export const effortName = k => EFFORT_NAME[k] || 'Auto';
+export const effortName = (k: string) => EFFORT_NAME[k] || 'Auto';
+
+export interface ModelContext {
+  task?: any;
+  routine?: any;
+  agent?: any;
+  dept?: any;
+  office?: any;
+  model?: any;
+}
 
 /** The effort that wins, and where it was set; falls through to the model's own default (may be null = the CLI decides). */
-export function effortFor({ task, routine, agent, dept, office, model } = {}) {
+export function effortFor({ task, routine, agent, dept, office, model }: ModelContext = {}): { effort: string | null; from: string } {
   if (normEffort(task)) return { effort: normEffort(task), from: 'task' };
   if (normEffort(routine)) return { effort: normEffort(routine), from: 'routine' };
   if (normEffort(agent)) return { effort: normEffort(agent), from: 'agent' };
   if (normEffort(dept)) return { effort: normEffort(dept), from: 'dept' };
   if (normEffort(office)) return { effort: normEffort(office), from: 'office' };
-  const m = MODELS[normModel(model)] || MODELS[DEFAULT_MODEL];
+  const m = MODELS[normModel(model) || DEFAULT_MODEL] || MODELS[DEFAULT_MODEL];
   return { effort: m.effort || null, from: 'model' };
 }
 
 /** Resolves model key or alias to canonical model key, or null. */
-export function normModel(s) {
+export function normModel(s?: any): string | null {
   const t = String(s || '').toLowerCase().trim();
   if (!t) return null;
   if (MODEL_ALIASES[t]) return MODEL_ALIASES[t];
   for (const k of MODEL_KEYS) if (t === k || t.includes(k)) return k;
   return null;
 }
-export const modelName = k => (MODELS[k] || MODELS[DEFAULT_MODEL]).name;
-export const modelId = k => (MODELS[k] || MODELS[DEFAULT_MODEL]).id;
+export const modelName = (k: string) => (MODELS[normModel(k) || DEFAULT_MODEL] || MODELS[DEFAULT_MODEL]).name;
+export const modelId = (k: string) => (MODELS[normModel(k) || DEFAULT_MODEL] || MODELS[DEFAULT_MODEL]).id;
 
 /** The one that wins, and where it was set. Precedence: Task > Routine > Agent > Dept > Office Default. */
-export function modelFor({ task, routine, agent, dept, office } = {}) {
-  if (normModel(task)) return { model: normModel(task), from: 'task' };
-  if (normModel(routine)) return { model: normModel(routine), from: 'routine' };
-  if (normModel(agent)) return { model: normModel(agent), from: 'agent' };
-  if (normModel(dept)) return { model: normModel(dept), from: 'dept' };
+export function modelFor({ task, routine, agent, dept, office }: ModelContext = {}): { model: string; from: string } {
+  if (normModel(task)) return { model: normModel(task)!, from: 'task' };
+  if (normModel(routine)) return { model: normModel(routine)!, from: 'routine' };
+  if (normModel(agent)) return { model: normModel(agent)!, from: 'agent' };
+  if (normModel(dept)) return { model: normModel(dept)!, from: 'dept' };
   return { model: normModel(office) || DEFAULT_MODEL, from: 'office' };
 }
 
 /** The CLI flags for a model key (+ an explicit effort level, else the model's own). */
-export function modelArgs(key, effort) {
-  const m = MODELS[normModel(key)] || MODELS[DEFAULT_MODEL];
+export function modelArgs(key: string, effort?: any): string[] {
+  const m = MODELS[normModel(key) || DEFAULT_MODEL] || MODELS[DEFAULT_MODEL];
   const a = ['--model', m.flag];
   const e = normEffort(effort) || m.effort;
   if (e) a.push('--effort', e);

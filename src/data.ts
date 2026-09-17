@@ -1,21 +1,34 @@
 // Agents Office v2 — roster + design tokens (ported from v1 command-centre.html)
 
+export interface TokenMap {
+  cream: string;
+  ink: string;
+  grey: string;
+  hairline: string;
+}
+
 // Nominal.so tokens (locked design language, 30 Jul 2026)
-export const TOKENS = {
+export const TOKENS: TokenMap = {
   cream: '#FDFFF8',
   ink: '#151414',
   grey: '#5A5A5A',
   hairline: 'rgba(21,20,20,0.12)',
 };
 
-// Dept mapping: Support→mint, Sales→butter, Marketing→coral, Finance→periwinkle,
-// Operations→violet, Brain→sage.
-// NOTE (17 Aug 2026): the old 'ops' pod split in two. The accounting half kept the pod,
-// the periwinkle palette and the key 'fin' (now FINANCE); Proposals + Intel moved out into
-// a new 'ops' pod (OPERATIONS) alongside Legal Review, Compliance and Internal Reporting.
-// V3.1 (5 Sep 2026, AJ): SUPPORT → EMAILS (same mint slot), new DELIVERY pod (sky) on the top axis.
-export const DEPT_KEYS = ['emails', 'sales', 'marketing', 'ops', 'fin', 'delivery'];
-const baseDEPTS = {
+export const DEPT_KEYS: string[] = ['exec', 'emails', 'sales', 'marketing', 'ops', 'fin', 'delivery'];
+
+export interface DeptConfig {
+  name: string;
+  short: string;
+  chip: string;
+  ink: string;
+  floor: string;
+  model?: string;
+  [key: string]: any;
+}
+
+const baseDEPTS: Record<string, DeptConfig> = {
+  exec:      { name: 'EXECUTIVE',        short: 'EXEC',    chip: '#F59E0B', ink: '#B45309', floor: '#FEF3C7' },
   emails:    { name: 'EMAILS',           short: 'EMAILS',  chip: '#5ADEB7', ink: '#1E9070', floor: '#E9F6EF' },
   delivery:  { name: 'DELIVERY',         short: 'DELIVERY', chip: '#8FD3F4', ink: '#2E86AB', floor: '#E6F4FB' },
   sales:     { name: 'SALES',            short: 'SALES',   chip: '#EADC8F', ink: '#A08A1E', floor: '#F6F1DA' },
@@ -24,9 +37,10 @@ const baseDEPTS = {
   ops:       { name: 'OPERATIONS',       short: 'OPERATIONS', chip: '#BFA2E3', ink: '#7449A9', floor: '#F2ECFA' },
   brain:     { name: 'THE BRAIN',        short: 'THE BRAIN', chip: '#D1DECD', ink: '#4C7A57', floor: '#E9EFE4' },
 };
-export const DEPTS = new Proxy(baseDEPTS, {
+
+export const DEPTS: Record<string, DeptConfig> = new Proxy(baseDEPTS, {
   get(target, prop) {
-    if (prop in target) return target[prop];
+    if (typeof prop === 'string' && prop in target) return target[prop];
     if (typeof prop === 'string' && prop !== 'then') {
       const name = prop.toUpperCase();
       return { name, short: name, chip: '#B0ADA3', ink: '#5A5A5A', floor: '#EFEFE8' };
@@ -35,8 +49,21 @@ export const DEPTS = new Proxy(baseDEPTS, {
   }
 });
 
+export interface AgentConfig {
+  id: string;
+  name: string;
+  dept: string;
+  lead?: boolean;
+  grid: [number, number];
+  hair: string;
+  skin: string;
+  [key: string]: any;
+}
+
 // 35 agents (V3.4, 7 Sep 2026: every department has a lead). grid = [col,row] desk slot on the department plinth.
-export const AGENTS = [
+export const AGENTS: AgentConfig[] = [
+  // EXECUTIVE (1) — CEO Orchestration
+  { id: 'ceo',   name: 'CHIEF EXECUTIVE OFFICER', dept: 'exec',   lead: true, is_ceo: true, grid: [0, 0], hair: '#1c1917', skin: '#F5D5B0' },
   // EMAILS (5) — replaced Customer Support, 5 Sep 2026
   { id: 'elead', name: 'EMAILS LEAD',         dept: 'emails',    lead: true,  grid: [0.5, 0], hair: '#2b2b2b', skin: '#E8B98E' },
   { id: 'cmail', name: 'CLIENT EMAILS',       dept: 'emails',    grid: [0, 1], hair: '#3b2b1d', skin: '#F0C9A0' },
@@ -80,20 +107,60 @@ export const AGENTS = [
   { id: 'ona',   name: 'ONBOARDER',           dept: 'delivery',  grid: [1, 3], hair: '#0d0d0d', skin: '#9C6B43' },
 ];
 
-// Plinth placement in world XZ. Brain central; departments well separated (AJ: not too close at zoom-out).
-export const LAYOUT = {
+export interface LayoutConfig {
+  pos: [number, number];
+  w: number;
+  d: number;
+}
+
+const DEFAULT_LAYOUTS: Record<string, LayoutConfig> = {
   brain:     { pos: [0, 0],     w: 16, d: 16 },
   emails:    { pos: [-30, -23], w: 20, d: 26 },
-  delivery:  { pos: [0, -48],   w: 20, d: 30 },   // 6th pod mirrors ops on the top axis
+  delivery:  { pos: [0, -48],   w: 20, d: 30 },
   sales:     { pos: [30, -23],  w: 20, d: 30 },
   marketing: { pos: [-30, 23],  w: 20, d: 30 },
   fin:       { pos: [30, 23],   w: 20, d: 26 },
-  ops:       { pos: [0, 48],    w: 20, d: 30 },   // the 5th pod fills the empty bottom-left gap
+  ops:       { pos: [0, 48],    w: 20, d: 30 },
 };
 
-// Department billboard metrics (v1 rule #5: live metrics float above each dept,
-// values tick green on change, "Waiting Approval" pulses amber when > 0).
-export const BILLBOARDS = {
+export function getSymmetricPos(key: string): [number, number] {
+  if (key === 'brain') return [0, 0];
+  if (DEFAULT_LAYOUTS[key]) return DEFAULT_LAYOUTS[key].pos;
+  const customDepts = DEPT_KEYS.filter(k => k !== 'brain' && !DEFAULT_LAYOUTS[k]);
+  const idx = customDepts.indexOf(key);
+  const customPositions: Array<[number, number]> = [
+    [-60, 0],   // West
+    [60, 0],    // East
+    [-48, -42], // Far NW
+    [48, -42],  // Far NE
+    [-48, 42],  // Far SW
+    [48, 42]    // Far SE
+  ];
+  if (idx >= 0) return customPositions[idx % customPositions.length];
+  return [-60, 0];
+}
+
+export const LAYOUT: Record<string, LayoutConfig> = new Proxy(DEFAULT_LAYOUTS, {
+  get(target, prop) {
+    if (typeof prop === 'string') {
+      if (prop === 'brain') return target.brain;
+      if (prop in target) return target[prop];
+      const pos = getSymmetricPos(prop);
+      return { pos, w: 20, d: 28 };
+    }
+    return undefined;
+  }
+});
+
+export interface BillboardMetric {
+  id: string;
+  label: string;
+  val: number;
+  fmt?: (v: number) => string;
+  step?: number;
+}
+
+const baseBILLBOARDS: Record<string, BillboardMetric[]> = {
   emails:    [{ id: 'emails',    label: 'EMAILS SENT',      val: 128 }],
   delivery:  [{ id: 'reports',   label: 'REPORTS SENT',     val: 9 }],
   sales:     [{ id: 'leads',     label: 'LEADS ENRICHED',   val: 47 },
@@ -104,9 +171,17 @@ export const BILLBOARDS = {
   brain:     [{ id: 'notes',     label: 'NOTES INDEXED',    val: 1204, fmt: v => Math.round(v).toLocaleString('en-NZ') }],
 };
 
-// Approval asks (agent requests → AJ decides; v1 flavour).
-// Per-agent first so the ask matches who's asking; dept pool is the fallback.
-export const APPROVAL_ASKS = {
+export const BILLBOARDS: Record<string, BillboardMetric[]> = new Proxy(baseBILLBOARDS, {
+  get(target, prop) {
+    if (typeof prop === 'string' && prop in target) return target[prop];
+    if (typeof prop === 'string' && prop !== 'then') {
+      return [{ id: prop, label: `${prop.toUpperCase()} TASKS`, val: 0 }];
+    }
+    return undefined;
+  }
+});
+
+const baseAPPROVAL_ASKS: Record<string, string[]> = {
   emails:    ['Send the price-increase notice to 120 clients — draft attached', 'Reply to the contractor dispute thread — draft attached'],
   delivery:  ['Ship the September report pack to 14 clients', 'Release the brand assets to the client portal'],
   sales:     ['Send re-engagement SMS to 214 cold leads', 'Move 8 enterprise leads to SPENCER’s queue'],
@@ -114,7 +189,18 @@ export const APPROVAL_ASKS = {
   ops:       ['Send proposal PDF to Ridgeline Property Group', 'Sign off the amended MSA for Kea Logistics — 2 clauses flagged'],
   fin:       ['Invoice #218 doesn’t match the contract — hold for review?', 'Write off $180 of unmatched card fees'],
 };
-export const APPROVAL_BY_AGENT = {
+
+export const APPROVAL_ASKS: Record<string, string[]> = new Proxy(baseAPPROVAL_ASKS, {
+  get(target, prop) {
+    if (typeof prop === 'string' && prop in target) return target[prop];
+    if (typeof prop === 'string' && prop !== 'then') {
+      return ['Review and sign off on department deliverables', 'Approve operational roadmap update'];
+    }
+    return undefined;
+  }
+});
+
+const baseAPPROVAL_BY_AGENT: Record<string, string> = {
   cmail: 'Send the price-increase notice to 120 clients — draft attached',
   vmail: 'Accept the vendor’s revised SLA — 2 changes flagged',
   crep:  'Send the September report pack to 14 clients — 2 flagged for a call',
@@ -132,8 +218,17 @@ export const APPROVAL_BY_AGENT = {
   enzo:  'Buy 500 FullEnrich credits — current batch runs out tomorrow',
 };
 
-// Fake terminal lines for the desk screens (per-dept flavour), matching v1's chat voice.
-export const WORKLINES = {
+export const APPROVAL_BY_AGENT: Record<string, string> = new Proxy(baseAPPROVAL_BY_AGENT, {
+  get(target, prop) {
+    if (typeof prop === 'string' && prop in target) return target[prop];
+    if (typeof prop === 'string' && prop !== 'then') {
+      return `Sign off task deliverable for ${prop}`;
+    }
+    return undefined;
+  }
+});
+
+const baseWORKLINES: Record<string, string[]> = {
   emails: [
     '▸ drafting reply — client scope question',
     '▸ vendor thread: SLA revision summarised',
@@ -167,10 +262,10 @@ export const WORKLINES = {
     '▸ weekly board pack: 4/6 sections done',
   ],
   fin: [
-    '▸ reconciling 14 payments · 2 flagged',
-    '▸ invoice #218 vs contract — rate variance flagged',
-    '▸ invoice issued — Summit HVAC $840',
-    '▸ reminder 2/3 sent — Alpine Freight',
+    '▸ invoice #218 held — rate mismatch',
+    '▸ monthly bank recon: 44/44 matched',
+    '▸ card charge audit: 18/18 verified',
+    '▸ quarterly tax pack: 2/4 files ready',
   ],
   brain: [
     '▸ indexing vault — 1,204 notes',
@@ -178,3 +273,18 @@ export const WORKLINES = {
     '▸ meeting scheduled: enzo × tess',
   ],
 };
+
+export const WORKLINES: Record<string, string[]> = new Proxy(baseWORKLINES, {
+  get(target, prop) {
+    if (typeof prop === 'string' && prop in target) return target[prop];
+    if (typeof prop === 'string' && prop !== 'then') {
+      return [
+        '▸ running department operations',
+        '▸ processing active workflow',
+        '▸ syncing task deliverables',
+        '▸ status check completed'
+      ];
+    }
+    return undefined;
+  }
+});

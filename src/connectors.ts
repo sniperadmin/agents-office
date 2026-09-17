@@ -1,20 +1,20 @@
 // V3.1 — the real connector list for the office. Served: GET /api/mcp (the MCP servers this
 // machine's Claude Code is connected to) + /api/agents (the roster's tool preferences) become
 // the `connectors` object initMcp() draws. Opened as a file: null → the demo list plays.
-import { MCP_LOGOS } from './mcplogos.js';
-import { DEPT_KEYS } from './data.js';
+import { MCP_LOGOS } from './mcplogos.ts';
+import { DEPT_KEYS } from './data.ts';
 
 // brand inks for shared looms (a shared connector is wired to four or more pods)
-const INK = { notion: '#151414', gmail: '#EA4335', slack: '#4A154B', zapier: '#FF4F00', claude_ai_Google_Drive: '#1FA463', googledrive: '#1FA463' };
-const norm = s => String(s).toLowerCase().replace(/^claude\.ai\s+/, '').replace(/[^a-z0-9]/g, '');
-function hue(name) { let h = 0; for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; }
-export const inkOf = name => `hsl(${hue(name)} 52% 42%)`;
+const INK: Record<string, string> = { notion: '#151414', gmail: '#EA4335', slack: '#4A154B', zapier: '#FF4F00', claude_ai_Google_Drive: '#1FA463', googledrive: '#1FA463' };
+const norm = (s: any) => String(s).toLowerCase().replace(/^claude\.ai\s+/, '').replace(/[^a-z0-9]/g, '');
+function hue(name: any): number { let h = 0; for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; }
+export const inkOf = (name: any) => `hsl(${hue(name)} 52% 42%)`;
 
 // a tile for a server we have no logo for: same white rounded square as the baked ones, the
 // name's initials in a colour hashed from the name — stable across boots
-export function tile(name) {
+export function tile(name: any): string {
   const c = document.createElement('canvas'); c.width = c.height = 160;
-  const x = c.getContext('2d');
+  const x = c.getContext('2d')!;
   const r = 34;
   x.beginPath(); x.roundRect(1, 1, 158, 158, r); x.fillStyle = '#fff'; x.fill();
   x.lineWidth = 2; x.strokeStyle = 'rgba(28,26,23,0.10)'; x.stroke();
@@ -27,9 +27,9 @@ export function tile(name) {
   return c.toDataURL('image/png');
 }
 
-export function fromSummary(m, agents) {
-  const byDept = Object.fromEntries(DEPT_KEYS.map(k => [k, []]));
-  const logos = {}, status = {}, shared = {}, names = {}, off = [];
+export function fromSummary(m: any, agents?: any[] | null) {
+  const byDept: Record<string, string[]> = Object.fromEntries(DEPT_KEYS.map(k => [k, []]));
+  const logos: Record<string, any> = {}, status: Record<string, string> = {}, shared: Record<string, string> = {}, names: Record<string, string> = {}, off: string[] = [];
   for (const s of m.servers || []) {
     const key = s.key || s.id;
     logos[key] = MCP_LOGOS[key] || { name: s.name, img: tile(s.name) };
@@ -40,8 +40,8 @@ export function fromSummary(m, agents) {
     for (const d of s.depts || []) if (byDept[d] && !byDept[d].includes(key)) byDept[d].push(key);
     if ((s.depts || []).length >= 4) shared[key] = INK[key] || INK[norm(s.name)] || inkOf(s.name);
   }
-  const agentTools = agents ? Object.fromEntries(agents.map(a => [a.id, (a.tools || []).map(t => {
-    const n = norm(t); const hit = (m.servers || []).find(s => s.key === n || norm(s.name) === n || s.id === t); return hit ? (hit.key || hit.id) : n;
+  const agentTools = agents ? Object.fromEntries(agents.map(a => [a.id, (a.tools || []).map((t: string) => {
+    const n = norm(t); const hit = (m.servers || []).find((s: any) => s.key === n || norm(s.name) === n || s.id === t); return hit ? (hit.key || hit.id) : n;
   })])) : null;
   return { live: true, byDept, logos, status, shared, names, off, agentTools, servers: m.servers || [], tools: !!m.tools, web: !!m.web };
 }

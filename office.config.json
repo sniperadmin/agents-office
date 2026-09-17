@@ -2,7 +2,7 @@
   "name": "Nasr Galal Studio",
   "brain": "./brain",
   "port": 4520,
-  "model": "hermes-3-70b",
+  "model": "antigravity-flash",
   "mcp": {
     "allow": [],
     "deny": [],
@@ -10,5 +10,11 @@
   },
   "tools": {
     "web": true
+  },
+  "customDepartments": [],
+  "departments": {
+    "dev": {
+      "model": "antigravity-flash"
+    }
   }
 }

@@ -1,43 +1,37 @@
-// Agents Office — the roster (Beta). Who sits where is fixed (six pods, 35 seats); what each
-// agent is called, does and uses is yours to change in office.agents.json.
-//   built-in defaults  ← office.agents.json  ← <brain>/Agents Office/agents.json  ← office.agents.local.json (gitignored)
-// Departments, leads and seats cannot be changed from these files; the office ignores such
-// edits and says so. `brief` is the owner's standing instructions to that agent (multi-line),
-// read before every task. Skills — how a kind of work is done — live beside the agents in
-// skills.mjs. See CLAUDE.md for how to change agents with Claude Code.
+// Agents Office — the roster (Beta).
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROOT, loadConfig } from './config.mjs';
-import { AGENTS, DEPTS } from './src/data.js';
-import { V1 } from './src/v1data.js';
-import { MODEL_KEYS, normModel } from './src/models.js';
+import { ROOT, loadConfig } from './config.ts';
+import { AGENTS, DEPTS } from './src/data.ts';
+import { V1 } from './src/v1data.ts';
+import { MODEL_KEYS, normModel } from './src/models.ts';
 
 export const FILE = path.join(ROOT, 'office.agents.json');
 export const LOCAL = path.join(ROOT, 'office.agents.local.json');
-export const brainFile = brainPath => path.join(brainPath, 'Agents Office', 'agents.json');
-const EDITABLE = ['name', 'role', 'does', 'tools', 'brief', 'model', 'effort'];
+export const brainFile = (brainPath: string): string => path.join(brainPath, 'Agents Office', 'agents.json');
+const EDITABLE = ['name', 'role', 'does', 'tools', 'brief', 'model', 'effort', 'is_ceo'];
 const BRIEF_MAX = 2000;
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']; // V3.6.1: an agent's effort; empty = the office's, then the model's own
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 export function defaults() {
-  return AGENTS.map(a => { const p = V1.find(x => x.id === a.id) || {}; return { id: a.id, department: a.dept, lead: !!a.lead, name: a.name, role: p.role || '', does: p.tagline || '', tools: [], brief: '', model: '', effort: '' }; });
+  return AGENTS.map(a => { const p = V1.find(x => x.id === a.id) || {}; return { id: a.id, department: a.dept || a.department, lead: !!a.lead, name: a.name, role: a.role || p.role || '', does: a.does || p.tagline || '', tools: (a.tools || []) as string[], brief: a.brief || '', model: a.model || '', effort: a.effort || '' }; });
 }
-// returns { agents, problems } — problems are human sentences, never thrown
-export function validate(doc, base = defaults()) {
-  const problems = [];
+
+export function validate(doc: any, base = defaults()) {
+  const problems: string[] = [];
   const list = Array.isArray(doc) ? doc : Array.isArray(doc?.agents) ? doc.agents : null;
   if (!list) return { agents: base, problems: ['the file must be {"agents": [...]}'] };
   const out = base.map(a => ({ ...a, tools: [...a.tools] }));
-  const seen = new Set();
+  const seen = new Set<string>();
   for (const e of list) {
     if (!e || typeof e !== 'object' || !e.id) { problems.push('an entry has no "id" — skipped'); continue; }
     let a = out.find(x => x.id === e.id);
     if (!a) {
-      if (base.some(x => x.id === 'elead') && !doc.allowCustomSeats) {
-        problems.push(`"${e.id}" is not one of the 35 seats — skipped (new agents are not supported; rename a seat instead)`);
+      if (base.some(x => x.id === 'elead') && !doc.allowCustomSeats && !doc.allowCustomAgents && (!e.department || ['emails', 'sales', 'marketing', 'ops', 'fin', 'delivery', 'exec'].includes(e.department))) {
+        problems.push(`"${e.id}" is not one of the seats — skipped`);
         continue;
       }
-      a = { id: e.id, department: e.department || 'ops', lead: !!e.lead, name: String(e.name || e.id).toUpperCase(), role: String(e.role || ''), does: String(e.does || ''), tools: [], brief: '', model: '', effort: '' };
+      a = { id: e.id, department: e.department || e.dept || 'ops', lead: !!e.lead, name: String(e.name || e.id).toUpperCase(), role: String(e.role || ''), does: String(e.does || ''), tools: [], brief: '', model: '', effort: '' };
       out.push(a);
     }
     if (seen.has(e.id)) problems.push(`"${e.id}" appears twice — the later entry wins`);
@@ -57,11 +51,11 @@ export function validate(doc, base = defaults()) {
       else if (m) a.model = m;
       else problems.push(`"${e.id}": model must be one of ${MODEL_KEYS.join(', ')} (got "${e.model}") — kept ${a.model || 'the office default'}`);
     }
-    if (e.effort !== undefined) { // V3.6.1: low · medium · high · xhigh · max, or empty
+    if (e.effort !== undefined) {
       const v = String(e.effort || '').toLowerCase().trim();
       if (!v) a.effort = ''; else if (EFFORTS.includes(v)) a.effort = v; else problems.push(`"${e.id}": effort must be low, medium, high, xhigh or max (got "${e.effort}") — kept ${a.effort || 'the default'}`);
     }
-    if (e.brief !== undefined) { // a string, or a list of lines
+    if (e.brief !== undefined) {
       const b = (Array.isArray(e.brief) ? e.brief.map(String).join('\n') : String(e.brief)).trim();
       if (b.length > BRIEF_MAX) problems.push(`"${e.id}": brief is over ${BRIEF_MAX} characters — trimmed (put the long version in a skill)`);
       a.brief = b.slice(0, BRIEF_MAX);
@@ -69,18 +63,20 @@ export function validate(doc, base = defaults()) {
   }
   return { agents: out, problems };
 }
-function read(p) { if (!fs.existsSync(p)) return null; try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) { return { __error: e.message }; } }
+
+function read(p: string): any { if (!fs.existsSync(p)) return null; try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e: any) { return { __error: e.message }; } }
+
 export function loadRoster(brainPath = loadConfig().brainPath) {
-  let agents = defaults(); const problems = [];
+  let agents = defaults(); const problems: string[] = [];
   const sources = [FILE, brainFile(brainPath), LOCAL];
-  const label = p => p === FILE || p === LOCAL ? path.basename(p) : 'brain/Agents Office/agents.json';
+  const label = (p: string) => p === FILE || p === LOCAL ? path.basename(p) : 'brain/Agents Office/agents.json';
   for (const p of sources) {
     const doc = read(p); if (!doc) continue;
     const rel = label(p);
     if (doc.__error) { problems.push(`${rel}: not valid JSON (${doc.__error.split('\n')[0]}) — ignored`); continue; }
     const r = validate(doc, agents); agents = r.agents; problems.push(...r.problems.map(x => `${rel}: ${x}`));
   }
-  const customised = agents.filter((a, i) => { const d = defaults()[i]; return a.name !== d.name || a.role !== d.role || a.does !== d.does || a.brief; }).length;
+  const customised = agents.filter((a, i) => { const d = defaults()[i]; return !d || a.name !== d.name || a.role !== d.role || a.does !== d.does || a.brief; }).length;
   return { agents, problems, customised, briefed: agents.filter(a => a.brief).length, files: sources.filter(p => fs.existsSync(p)).map(label) };
 }
-export const deptName = k => DEPTS[k]?.name || k;
+export const deptName = (k: string): string => DEPTS[k]?.name || k;
