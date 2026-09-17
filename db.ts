@@ -277,6 +277,10 @@ export class Database {
   }
 
   public deleteDepartment(deptKey: string): { ok: boolean; removedAgents: string[] } {
+    const CORE_DEPTS = ['exec', 'emails', 'sales', 'marketing', 'ops', 'fin', 'delivery', 'brain'];
+    if (CORE_DEPTS.includes(deptKey)) {
+      return { ok: false, removedAgents: [] };
+    }
     this.db.prepare('DELETE FROM departments WHERE key = ?').run(deptKey);
     const agentRows = this.db.prepare('SELECT id FROM agents WHERE department = ?').all() as any[];
     const toRemove = agentRows.map(r => r.id);

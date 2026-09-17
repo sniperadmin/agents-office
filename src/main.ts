@@ -189,20 +189,17 @@ function buildDeptBadge(k) {
   deptRT[k].vals = rows.map(row => String(row[1]()));
   deptRT[k].apprRow = b.querySelector('.b-appr');
   deptRT[k].apprN = b.querySelector('.ap-n');
-  const ANCHOR = {
-    marketing: [-36, 8.6, 28.4],
-    emails:    [-30, 8.6, -32.6],
-    delivery:  [0, 10.6, -57.6],
-    sales:     [48, 8.6, -32],
-    ops:       [-13.5, 4, 54],
-    fin:       [43.5, 4, 17],
-    brain:     [-5.5, 3.2, -5.5],
-  };
   const L = LAYOUT[k];
-  const anc = ANCHOR[k] || [L.pos[0] - 6, 8.6, L.pos[1] + (L.pos[1] >= 0 ? 5 : -5)];
-  deptRT[k].badgeAnchor = new THREE.Vector3(...anc);
-  if (k === 'fin') deptRT[k].sideBadge = true;
-  if (k === 'ops') { deptRT[k].sideBadge = true; deptRT[k].sideLeft = true; }
+  if (k === 'brain') {
+    deptRT[k].badgeAnchor = new THREE.Vector3(-5.5, 3.2, -5.5);
+  } else if (L) {
+    const px = L.pos[0], pz = L.pos[1];
+    const dist = Math.hypot(px, pz) || 1;
+    const ux = px / dist, uz = pz / dist;
+    deptRT[k].badgeAnchor = new THREE.Vector3(px + ux * 15, 8.6, pz + uz * 15);
+  } else {
+    deptRT[k].badgeAnchor = new THREE.Vector3(0, 8.6, 0);
+  }
 }
 
 function buildDeptPod(key_) {
@@ -227,6 +224,7 @@ function buildDeptPod(key_) {
     const walk = makeWalkway(from, to);
     walk.userData.dept = key_; walk.userData.part = 'walkway';
     scene.add(walk);
+    deptRT[key_].walkway = walk;
     deptRT[key_].gate = new THREE.Vector3(from[0], 0, from[1]);
     deptRT[key_].brainGate = new THREE.Vector3(to[0], 0, to[1]);
 
@@ -234,6 +232,7 @@ function buildDeptPod(key_) {
     plant.position.set(L.pos[0] + sx * (L.w / 2 - 1.6), 0.12, L.pos[1] + sz * (L.d / 2 - 1.6));
     plant.traverse(o => { if (o.isMesh) o.userData.dept = key_; });
     scene.add(plant);
+    deptRT[key_].plant = plant;
 
     DEPT_AZ[key_] = Math.atan2(L.pos[1], L.pos[0]);
   }
@@ -308,7 +307,69 @@ function buildAgent3D(a) {
   };
 }
 
+function realignAllDepts() {
+  for (const k of DEPT_KEYS) {
+    const L = LAYOUT[k];
+    if (!L) continue;
+    const pos = L.pos;
+    const dRT = deptRT[k];
+    if (dRT) {
+      if (dRT.group) dRT.group.position.set(pos[0], 0, pos[1]);
+      dRT.L = L;
+
+      if (k !== 'brain') {
+        if (dRT.walkway) scene.remove(dRT.walkway);
+        if (dRT.plant) scene.remove(dRT.plant);
+
+        const sx = Math.sign(pos[0]) || 1, sz = Math.sign(pos[1]) || 1;
+        const from = [pos[0] - sx * (L.w / 2 - 1), pos[1] - sz * (L.d / 2 - 1)];
+        const to = [sx * 6.5, sz * 6.5];
+        const walk = makeWalkway(from, to);
+        walk.userData.dept = k; walk.userData.part = 'walkway';
+        scene.add(walk);
+        dRT.walkway = walk;
+
+        const plant = makePlant();
+        plant.position.set(pos[0] + sx * (L.w / 2 - 1.6), 0.12, pos[1] + sz * (L.d / 2 - 1.6));
+        plant.traverse(o => { if (o.isMesh) o.userData.dept = k; });
+        scene.add(plant);
+        dRT.plant = plant;
+
+        dRT.gate = new THREE.Vector3(from[0], 0, from[1]);
+        dRT.brainGate = new THREE.Vector3(to[0], 0, to[1]);
+        DEPT_AZ[k] = Math.atan2(pos[1], pos[0]);
+
+        const dist = Math.hypot(pos[0], pos[1]) || 1;
+        const ux = pos[0] / dist, uz = pos[1] / dist;
+        if (dRT.badgeAnchor) dRT.badgeAnchor.set(pos[0] + ux * 15, 8.6, pos[1] + uz * 15);
+      }
+
+      const cols = COLS[k] || 2;
+      const deptAgents = AGENTS.filter(x => x.dept === k);
+      for (const a of deptAgents) {
+        if (R[a.id]) {
+          const agentIdx = deptAgents.indexOf(a);
+          const grid = a.grid || [(agentIdx % cols), Math.floor(agentIdx / cols) + 1];
+          const gx = (grid[0] - (cols - 1) / 2) * 8.6;
+          const gz = (grid[1] - 1) * 6.4 - 1;
+          const base = new THREE.Vector3(pos[0] + gx, 0.12, pos[1] + gz);
+          const ANG = Math.PI / 4;
+          const rot = (v: any) => v.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), ANG);
+
+          const r = R[a.id];
+          r.seat.copy(base).add(rot(new THREE.Vector3(0, 0, 1.7)));
+          r.stand.copy(base).add(rot(new THREE.Vector3(1.5, 0, 0.15)));
+          if (r.state === 'working') {
+            r.person.position.copy(r.seat);
+          }
+        }
+      }
+    }
+  }
+}
+
 function refresh3D() {
+  realignAllDepts();
   for (const k of DEPT_KEYS) {
     if (!deptRT[k]) {
       buildDeptPod(k);
@@ -324,15 +385,19 @@ function refresh3D() {
       buildAgent3D(a);
     }
   }
+  realignAllDepts();
 }
 
 function removeDeptPod(key_) {
   const dRT = deptRT[key_];
   if (!dRT) return;
   if (dRT.group) scene.remove(dRT.group);
+  if (dRT.walkway) scene.remove(dRT.walkway);
+  if (dRT.plant) scene.remove(dRT.plant);
   if (dRT.badge && dRT.badge.parentNode) dRT.badge.parentNode.removeChild(dRT.badge);
   delete deptRT[key_];
   delete DEPT_AZ[key_];
+  realignAllDepts();
 }
 
 function removeAgent3D(id) {
@@ -1329,17 +1394,32 @@ function tickLOD() {
   const badgeScale = 1.02 - 0.3 * smooth(1.2, 2.6, z);
   for (const [k, d] of Object.entries(deptRT)) {
     if (focused === k && k !== 'brain') continue; // this billboard is docked in the rail
+    if (!d.badgeAnchor || !d.badge) continue;
     let [sx, sy] = toScreen(d.badgeAnchor);
-    // keep billboards fully on screen (camera-readability rule)
     const bh = d.badge.offsetHeight * badgeScale, bw = d.badge.offsetWidth * badgeScale;
+    const rightEdge = innerWidth - ((tasks ? tasks.panelWidth() : 400) + 26);
     let xf;
-    if (d.sideBadge) { // anchored by an edge, vertically centred (emails/sales/fin/delivery)
-      const rightEdge = innerWidth - ((tasks ? tasks.panelWidth() : 400) + 26); // V3.3: never under the panel
-      sy = clamp(sy, 64 + bh / 2, innerHeight - bh / 2 - 8);
-      if (d.sideLeft) { sx = clamp(sx, bw + 8, rightEdge); xf = 'translate(-100%,-50%)'; }
-      else { sx = clamp(sx, 8, rightEdge - bw); xf = 'translate(0,-50%)'; }
+    if (k !== 'brain') {
+      const L = LAYOUT[k];
+      const px = L ? L.pos[0] : 0, pz = L ? L.pos[1] : 0;
+      const dist = Math.hypot(px, pz) || 1;
+      const ux = px / dist, uz = pz / dist;
+
+      if (ux < -0.3) {
+        xf = 'translate(-100%, -50%)';
+        sx = clamp(sx, bw + 12, rightEdge);
+      } else if (ux > 0.3) {
+        xf = 'translate(0%, -50%)';
+        sx = clamp(sx, 12, rightEdge - bw - 12);
+      } else if (uz < 0) {
+        xf = 'translate(-50%, -100%)';
+        sx = clamp(sx, bw / 2 + 12, rightEdge - bw / 2);
+      } else {
+        xf = 'translate(-50%, 0%)';
+        sx = clamp(sx, bw / 2 + 12, rightEdge - bw / 2);
+      }
+      sy = clamp(sy, bh / 2 + 64, innerHeight - bh / 2 - 12);
     } else {
-      const rightEdge = innerWidth - ((tasks ? tasks.panelWidth() : 400) + 26);
       sy = clamp(sy, bh + 64, innerHeight - 12);
       sx = clamp(sx, bw / 2 + 8, rightEdge - bw / 2);
       xf = 'translate(-50%,-100%)';

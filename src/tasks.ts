@@ -379,6 +379,8 @@ export function initTasks(ctx) {
   }
 
   async function disbandDepartment(deptKey: string) {
+    const CORE_DEPTS = ['exec', 'emails', 'sales', 'marketing', 'ops', 'fin', 'delivery', 'brain'];
+    if (CORE_DEPTS.includes(deptKey)) return false;
     try {
       const res = await fetch(`${API}/departments/${deptKey}`, { method: 'DELETE' });
       if (res.ok) {
@@ -389,6 +391,7 @@ export function initTasks(ctx) {
         if (ctx.removeDeptPod) ctx.removeDeptPod(deptKey);
         syncAgents(data.agents);
         syncDepartments(data);
+        if (ctx.refresh3D) ctx.refresh3D();
         renderDeptMenu();
         return true;
       }
