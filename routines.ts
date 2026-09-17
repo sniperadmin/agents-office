@@ -4,8 +4,8 @@ import path from 'node:path';
 import { describe, nextRun, valid } from './src/when.ts';
 import { MODEL_KEYS, normModel } from './src/models.ts';
 
-export const ALLOWED = ['emails', 'fin', 'sales', 'marketing', 'ops', 'delivery', 'design', 'dev', 'qa'];
-export const NAMES: Record<string, string> = { emails: 'Emails', fin: 'Accounting', sales: 'Sales', marketing: 'Marketing', ops: 'Operations', delivery: 'Delivery', design: 'Design', dev: 'Development', qa: 'QA' };
+export const ALLOWED = ['exec', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale', 'emails', 'fin', 'ops', 'delivery', 'design', 'dev', 'qa'];
+export const NAMES: Record<string, string> = { exec: 'Executive', foundations: 'Foundations', marketing: 'Marketing', sales: 'Sales', nurture: 'Nurture', launch: 'Launch', partnerships: 'Partnerships', scale: 'Scale', emails: 'Emails', fin: 'Accounting', ops: 'Operations', delivery: 'Delivery', design: 'Design', dev: 'Development', qa: 'QA' };
 export const file = (brainPath: string): string => path.join(brainPath, 'Agents Office', 'routines.json');
 export const stateFile = (dataDir: string): string => path.join(dataDir, 'routines.json');
 export const LATE_AFTER = 90 * 1000;

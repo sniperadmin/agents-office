@@ -167,6 +167,37 @@ export class Database {
         key TEXT PRIMARY KEY,
         val TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS task_graph (
+        task_id TEXT NOT NULL,
+        parent_task_id TEXT,
+        dept TEXT NOT NULL,
+        role TEXT,
+        PRIMARY KEY (task_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS agent_events (
+        id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        from_agent TEXT NOT NULL,
+        to_agent TEXT,
+        task_id TEXT,
+        payload TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS graph_states (
+        task_id TEXT PRIMARY KEY,
+        dept TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 1,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        qa_score INTEGER,
+        qa_feedback TEXT,
+        history TEXT NOT NULL DEFAULT '[]',
+        updated_at INTEGER NOT NULL
+      );
     `);
   }
 
@@ -209,6 +240,19 @@ export class Database {
         }
       } catch (e: any) {
         console.warn('db: migration warning for tasks.json:', e.message);
+      }
+    }
+  }
+
+  public syncHeuresisRoster(heuresisAgents: AgentRecord[]): void {
+    const validIds = new Set(heuresisAgents.map(a => a.id));
+    for (const a of heuresisAgents) {
+      this.addOrUpdateAgent(a);
+    }
+    const current = this.getAgents();
+    for (const ca of current) {
+      if (!validIds.has(ca.id) && !ca.id.includes('_spec_')) {
+        this.db.prepare('DELETE FROM agents WHERE id = ?').run(ca.id);
       }
     }
   }
@@ -277,7 +321,7 @@ export class Database {
   }
 
   public deleteDepartment(deptKey: string): { ok: boolean; removedAgents: string[] } {
-    const CORE_DEPTS = ['exec', 'emails', 'sales', 'marketing', 'ops', 'fin', 'delivery', 'brain'];
+    const CORE_DEPTS = ['exec', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale', 'brain'];
     if (CORE_DEPTS.includes(deptKey)) {
       return { ok: false, removedAgents: [] };
     }
@@ -448,20 +492,136 @@ export class Database {
         t.draft || null
       );
     }
-    try {
-      fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2));
-    } catch (e: any) {
-      console.warn('db: sync warning for tasks.json:', e.message);
+    // NOTE: tasks.json write removed — SQLite is now the single source of truth
+  }
+
+  /** Insert a single task record. Idempotent via ON CONFLICT. */
+  public addTask(t: any): void {
+    this.db.prepare(`
+      INSERT INTO tasks (id, dept, agent, title, text, plan, eta, why, priority, state, added_at, changed_at, started_at, done_at, by_who, model, effort, result, read_notes, used_tools, tools, error, draft)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        state = excluded.state,
+        changed_at = excluded.changed_at,
+        started_at = COALESCE(excluded.started_at, started_at),
+        done_at = COALESCE(excluded.done_at, done_at),
+        result = COALESCE(excluded.result, result),
+        read_notes = COALESCE(excluded.read_notes, read_notes),
+        used_tools = COALESCE(excluded.used_tools, used_tools),
+        tools = COALESCE(excluded.tools, tools),
+        error = excluded.error,
+        draft = COALESCE(excluded.draft, draft)
+    `).run(
+      String(t.id), t.dept, t.agent, t.title, t.text || t.title,
+      t.plan ? JSON.stringify(t.plan) : null,
+      t.eta || null, t.why || null, t.priority || 'MEDIUM',
+      t.state || 'next', t.addedAt || t.added_at || Date.now(),
+      t.changedAt || t.changed_at || Date.now(),
+      t.startedAt || t.started_at || null,
+      t.doneAt || t.done_at || null,
+      t.by || null, t.model || null, t.effort || null,
+      t.result || null,
+      JSON.stringify(t.read || []),
+      JSON.stringify(t.used || []),
+      JSON.stringify(t.tools || []),
+      t.error ? 1 : 0, t.draft || null
+    );
+  }
+
+  /** Patch any subset of fields on an existing task. */
+  public updateTask(id: string, patch: Record<string, any>): void {
+    const map: Record<string, string> = {
+      state: 'state', result: 'result', startedAt: 'started_at', doneAt: 'done_at',
+      changedAt: 'changed_at', error: 'error', draft: 'draft',
+      read: 'read_notes', tools: 'tools', used: 'used_tools',
+      note: 'draft', // store note name in draft column when result already set
+      needsOk: 'error', // not stored separately; handled in memory
+    };
+    const sets: string[] = [];
+    const vals: any[] = [];
+    for (const [k, col] of Object.entries(map)) {
+      if (!(k in patch)) continue;
+      if (k === 'error') { sets.push(`${col} = ?`); vals.push(patch[k] ? 1 : 0); }
+      else if (k === 'read' || k === 'tools' || k === 'used') { sets.push(`${col} = ?`); vals.push(JSON.stringify(patch[k] || [])); }
+      else { sets.push(`${col} = ?`); vals.push(patch[k] ?? null); }
     }
+    if (!sets.length) return;
+    sets.push('changed_at = ?'); vals.push(Date.now());
+    vals.push(id);
+    this.db.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+  }
+
+  public getTaskById(id: string): any | null {
+    const r = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as any;
+    if (!r) return null;
+    return {
+      id: String(r.id), dept: r.dept, agent: r.agent, title: r.title,
+      text: r.text, plan: r.plan ? (() => { try { return JSON.parse(r.plan); } catch { return []; } })() : [],
+      eta: r.eta, why: r.why, priority: r.priority || 'MEDIUM',
+      state: r.state, addedAt: r.added_at, changedAt: r.changed_at,
+      startedAt: r.started_at, doneAt: r.done_at, by: r.by_who,
+      model: r.model, effort: r.effort, result: r.result,
+      read: JSON.parse(r.read_notes || '[]'),
+      tools: JSON.parse(r.tools || '[]'),
+      used: JSON.parse(r.used_tools || '[]'),
+      error: Boolean(r.error), draft: r.draft
+    };
+  }
+
+  public getTasksByDept(dept: string): any[] {
+    const rows = this.db.prepare('SELECT * FROM tasks WHERE dept = ? ORDER BY added_at DESC').all(dept) as any[];
+    return rows.map(r => ({
+      id: String(r.id), dept: r.dept, agent: r.agent, title: r.title,
+      text: r.text, state: r.state, addedAt: r.added_at, result: r.result,
+      error: Boolean(r.error), priority: r.priority
+    }));
   }
 
   public deleteTask(taskId: string): boolean {
     const res = this.db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
-    if (res.changes > 0) {
-      this.saveTasks(this.getTasks());
-      return true;
+    return res.changes > 0;
+  }
+
+  /* ---------- Task Graph (parent/child for CEO orchestration) ---------- */
+  public linkTaskGraph(taskId: string, parentTaskId: string | null, dept: string, role?: string): void {
+    this.db.prepare(`
+      INSERT INTO task_graph (task_id, parent_task_id, dept, role)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(task_id) DO UPDATE SET parent_task_id = excluded.parent_task_id, dept = excluded.dept, role = COALESCE(excluded.role, role)
+    `).run(taskId, parentTaskId || null, dept, role || null);
+  }
+
+  public getChildTasks(parentTaskId: string): any[] {
+    const rows = this.db.prepare('SELECT tg.*, t.state, t.result, t.agent, t.title FROM task_graph tg LEFT JOIN tasks t ON tg.task_id = t.id WHERE tg.parent_task_id = ?').all(parentTaskId) as any[];
+    return rows.map(r => ({ taskId: r.task_id, dept: r.dept, role: r.role, state: r.state, result: r.result, agent: r.agent, title: r.title }));
+  }
+
+  /* ---------- Agent Events (handoffs, messages, delegation) ---------- */
+  public logAgentEvent(type: 'handoff' | 'message' | 'result' | 'orchestrate', fromAgent: string, opts: { toAgent?: string; taskId?: string; payload?: any } = {}): void {
+    const id = 'evt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    this.db.prepare('INSERT INTO agent_events (id, event_type, from_agent, to_agent, task_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, type, fromAgent, opts.toAgent || null, opts.taskId || null, JSON.stringify(opts.payload || {}), Date.now());
+  }
+
+  public getAgentEvents(limit = 50, taskId?: string): any[] {
+    let sql = 'SELECT * FROM agent_events';
+    const params: any[] = [];
+    if (taskId) { sql += ' WHERE task_id = ?'; params.push(taskId); }
+    sql += ' ORDER BY created_at DESC LIMIT ?'; params.push(limit);
+    return (this.db.prepare(sql).all(...params) as any[]).map(r => ({
+      id: r.id, type: r.event_type, fromAgent: r.from_agent, toAgent: r.to_agent,
+      taskId: r.task_id, payload: JSON.parse(r.payload || '{}'), createdAt: r.created_at
+    }));
+  }
+
+  /* ---------- DB Stats ---------- */
+  public getStats(): Record<string, number> {
+    const tables = ['tasks', 'agents', 'departments', 'memories', 'routines', 'task_graph', 'agent_events'];
+    const out: Record<string, number> = {};
+    for (const t of tables) {
+      try { out[t] = (this.db.prepare(`SELECT COUNT(*) as c FROM ${t}`).get() as any)?.c || 0; } catch { out[t] = 0; }
     }
-    return false;
+    return out;
   }
 
   /* ---------- Memories & Cross-Team Graph Memory ---------- */
@@ -517,6 +677,64 @@ export class Database {
       updatedAt: r.updated_at
     }));
   }
+
+  /* ---------- Graph State Persistence (LangGraph Harness) ---------- */
+  public saveGraphState(state: {
+    taskId: string;
+    dept: string;
+    agentId: string;
+    status: string;
+    attempts: number;
+    maxAttempts: number;
+    qaScore?: number;
+    qaFeedback?: string;
+    history: any[];
+  }): void {
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT INTO graph_states (task_id, dept, agent_id, status, attempts, max_attempts, qa_score, qa_feedback, history, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(task_id) DO UPDATE SET
+        dept = excluded.dept,
+        agent_id = excluded.agent_id,
+        status = excluded.status,
+        attempts = excluded.attempts,
+        max_attempts = excluded.max_attempts,
+        qa_score = excluded.qa_score,
+        qa_feedback = excluded.qa_feedback,
+        history = excluded.history,
+        updated_at = excluded.updated_at
+    `).run(
+      state.taskId,
+      state.dept,
+      state.agentId,
+      state.status,
+      state.attempts,
+      state.maxAttempts,
+      state.qaScore !== undefined ? state.qaScore : null,
+      state.qaFeedback || null,
+      JSON.stringify(state.history || []),
+      now
+    );
+  }
+
+  public getGraphState(taskId: string): any {
+    const row = this.db.prepare('SELECT * FROM graph_states WHERE task_id = ?').get(taskId) as any;
+    if (!row) return null;
+    return {
+      taskId: row.task_id,
+      dept: row.dept,
+      agentId: row.agent_id,
+      status: row.status,
+      attempts: row.attempts,
+      maxAttempts: row.max_attempts,
+      qaScore: row.qa_score,
+      qaFeedback: row.qa_feedback,
+      history: JSON.parse(row.history || '[]'),
+      updatedAt: row.updated_at
+    };
+  }
 }
 
 export const db = new Database();
+

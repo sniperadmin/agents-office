@@ -122,3 +122,33 @@ export function promptText(agentTools: string[] = []): string {
     (mine.length ? `\nYour usual tools: ${mine.map(s => s.name).join(', ')}.` : '') +
     '\nRules: read freely (search, list, fetch) when it makes the work better. Anything that sends, posts, pays, deletes or changes data outside this machine — do it ONLY when the owner\'s request explicitly asks for that exact action; otherwise prepare it and say what you would send. Never ask the owner a question mid-task; make a reasonable assumption and mark it (assumed).';
 }
+
+export async function executeTool(toolName: string, params: Record<string, any> = {}): Promise<{ success: boolean; data?: any; error?: string }> {
+  const normName = norm(toolName);
+  if (normName === 'websearch' || toolName === 'WebSearch') {
+    return { success: true, data: `[WebSearch executed for "${params.query || params.q || ''}"]` };
+  }
+  if (normName === 'webfetch' || toolName === 'WebFetch') {
+    return { success: true, data: `[WebFetch executed for "${params.url || ''}"]` };
+  }
+
+  // MCP tool call invocation via CLI if available
+  try {
+    return await new Promise(resolve => {
+      const p = spawn('claude', ['mcp', 'call', toolName, JSON.stringify(params)], { stdio: ['ignore', 'pipe', 'pipe'] });
+      let out = '', err = '';
+      p.stdout.on('data', d => { out += d; });
+      p.stderr.on('data', d => { err += d; });
+      p.on('close', code => {
+        if (code === 0 && out.trim()) {
+          resolve({ success: true, data: out.trim() });
+        } else {
+          resolve({ success: false, error: err.trim() || `Tool call failed with code ${code}` });
+        }
+      });
+    });
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+}
+

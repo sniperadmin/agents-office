@@ -15,7 +15,7 @@ export const TOKENS: TokenMap = {
   hairline: 'rgba(21,20,20,0.12)',
 };
 
-export const DEPT_KEYS: string[] = ['exec', 'emails', 'sales', 'marketing', 'ops', 'fin', 'delivery'];
+export const DEPT_KEYS: string[] = ['exec', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale'];
 
 export interface DeptConfig {
   name: string;
@@ -28,14 +28,15 @@ export interface DeptConfig {
 }
 
 const baseDEPTS: Record<string, DeptConfig> = {
-  exec:      { name: 'EXECUTIVE',        short: 'EXEC',    chip: '#F59E0B', ink: '#B45309', floor: '#FEF3C7' },
-  emails:    { name: 'EMAILS',           short: 'EMAILS',  chip: '#5ADEB7', ink: '#1E9070', floor: '#E9F6EF' },
-  delivery:  { name: 'DELIVERY',         short: 'DELIVERY', chip: '#8FD3F4', ink: '#2E86AB', floor: '#E6F4FB' },
-  sales:     { name: 'SALES',            short: 'SALES',   chip: '#EADC8F', ink: '#A08A1E', floor: '#F6F1DA' },
-  marketing: { name: 'MARKETING',        short: 'MARKETING', chip: '#E69393', ink: '#C46060', floor: '#FAE9E7' },
-  fin:       { name: 'FINANCE',          short: 'FINANCE', chip: '#98A5EF', ink: '#5B66CE', floor: '#EAEDFA' },
-  ops:       { name: 'OPERATIONS',       short: 'OPERATIONS', chip: '#BFA2E3', ink: '#7449A9', floor: '#F2ECFA' },
-  brain:     { name: 'THE BRAIN',        short: 'THE BRAIN', chip: '#D1DECD', ink: '#4C7A57', floor: '#E9EFE4' },
+  exec:         { name: 'EXECUTIVE',        short: 'EXEC',         chip: '#F59E0B', ink: '#B45309', floor: '#FEF3C7' },
+  foundations:  { name: 'FOUNDATIONS',      short: 'FOUNDATIONS',  chip: '#0A0907', ink: '#0A0907', floor: '#E6E5E3' },
+  marketing:    { name: 'MARKETING',        short: 'MARKETING',    chip: '#C69A5C', ink: '#8C6834', floor: '#F8F1E5' },
+  sales:        { name: 'SALES',            short: 'SALES',        chip: '#EADC8F', ink: '#A08A1E', floor: '#F6F1DA' },
+  nurture:      { name: 'NURTURE',          short: 'NURTURE',      chip: '#5ADEB7', ink: '#1E9070', floor: '#E9F6EF' },
+  launch:       { name: 'LAUNCH',           short: 'LAUNCH',       chip: '#A16A2E', ink: '#70461B', floor: '#F4ECE4' },
+  partnerships: { name: 'PARTNERSHIPS',     short: 'PARTNERSHIPS', chip: '#98A5EF', ink: '#5B66CE', floor: '#EAEDFA' },
+  scale:        { name: 'SCALE',            short: 'SCALE',        chip: '#BFA2E3', ink: '#7449A9', floor: '#F2ECFA' },
+  brain:        { name: 'THE BRAIN',        short: 'THE BRAIN',    chip: '#D1DECD', ink: '#4C7A57', floor: '#E9EFE4' },
 };
 
 export const DEPTS: Record<string, DeptConfig> = new Proxy(baseDEPTS, {
@@ -54,57 +55,87 @@ export interface AgentConfig {
   name: string;
   dept: string;
   lead?: boolean;
+  is_ceo?: boolean;
   grid: [number, number];
   hair: string;
   skin: string;
   [key: string]: any;
 }
 
-// 35 agents (V3.4, 7 Sep 2026: every department has a lead). grid = [col,row] desk slot on the department plinth.
+// Heuresis Growth Operator Agency Roster + Core Department Leads
 export const AGENTS: AgentConfig[] = [
-  // EXECUTIVE (1) — CEO Orchestration
-  { id: 'ceo',   name: 'CHIEF EXECUTIVE OFFICER', dept: 'exec',   lead: true, is_ceo: true, grid: [0, 0], hair: '#1c1917', skin: '#F5D5B0' },
-  // EMAILS (5) — replaced Customer Support, 5 Sep 2026
-  { id: 'elead', name: 'EMAILS LEAD',         dept: 'emails',    lead: true,  grid: [0.5, 0], hair: '#2b2b2b', skin: '#E8B98E' },
-  { id: 'cmail', name: 'CLIENT EMAILS',       dept: 'emails',    grid: [0, 1], hair: '#3b2b1d', skin: '#F0C9A0' },
-  { id: 'imail', name: 'INTERNAL EMAILS',     dept: 'emails',    grid: [1, 1], hair: '#111111', skin: '#C68B59' },
-  { id: 'vmail', name: 'VENDOR EMAILS',       dept: 'emails',    grid: [0, 2], hair: '#7a3b12', skin: '#F5D5B0' },
-  { id: 'kmail', name: 'CONTRACTOR EMAILS',   dept: 'emails',    grid: [1, 2], hair: '#4a2a10', skin: '#D89F70' },
-  // SALES (6) — Sales Lead at the head; Proposals moved in from Operations, Outreach retired
-  { id: 'lexi',  name: 'SALES LEAD',          dept: 'sales',     lead: true,  grid: [0.5, 0], hair: '#5a2d0c', skin: '#F0C9A0' },
-  { id: 'enzo',  name: 'LEAD ENRICHER',       dept: 'sales',     grid: [0, 1], hair: '#1c1c2e', skin: '#E0A878' },
-  { id: 'ilm',   name: 'INBOUND LEADS MANAGER', dept: 'sales',   grid: [1, 1], hair: '#26140a', skin: '#F5D5B0' },
-  { id: 'pros',  name: 'PROSPECTOR',          dept: 'sales',     grid: [0, 2], hair: '#2a1a0e', skin: '#E8B98E' },
-  { id: 'piper', name: 'PROPOSALS',           dept: 'sales',     grid: [1, 2], hair: '#2d1a0a', skin: '#F0C9A0' },
-  { id: 'folo',  name: 'FOLLOW UPS',          dept: 'sales',     grid: [0.5, 3], hair: '#171717', skin: '#F5D5B0' },
-  // MARKETING (7) — Marketing Lead at the head since 7 Sep 2026
-  { id: 'mlead', name: 'MARKETING LEAD',      dept: 'marketing', lead: true,  grid: [0.5, 0], hair: '#2a1a0e', skin: '#E0A878' },
-  { id: 'riley', name: 'RESEARCH',            dept: 'marketing', grid: [0, 1], hair: '#8a4a1f', skin: '#F5D5B0' },
-  { id: 'newt',  name: 'NEWSLETTER',          dept: 'marketing', grid: [1, 1], hair: '#26140a', skin: '#D89F70' },
-  { id: 'gfx',   name: 'GRAPHICS DESIGNER',   dept: 'marketing', grid: [0, 2], hair: '#141414', skin: '#F0C9A0' },
-  { id: 'ada',   name: 'META ADS',            dept: 'marketing', grid: [1, 2], hair: '#3d2814', skin: '#C68B59' },
-  { id: 'iggy',  name: 'INSTAGRAM ORGANIC',   dept: 'marketing', grid: [0, 3], hair: '#552200', skin: '#E8B98E' },
-  { id: 'vid',   name: 'VIDEO EDITOR',        dept: 'marketing', grid: [1, 3], hair: '#1b1b24', skin: '#D9A97E' },
-  // OPERATIONS (6) — Operations Lead at the head since 7 Sep 2026; Internal Dashboards joins; Proposals moved to Sales
-  { id: 'olead', name: 'OPERATIONS LEAD',     dept: 'ops',       lead: true,  grid: [0.5, 0], hair: '#111111', skin: '#F0C9A0' },
-  { id: 'scout', name: 'INTEL',               dept: 'ops',       grid: [0, 1], hair: '#101820', skin: '#B07850' },
-  { id: 'legal', name: 'LEGAL REVIEW',        dept: 'ops',       grid: [1, 1], hair: '#20242e', skin: '#F0C9A0' },
-  { id: 'comply', name: 'COMPLIANCE CHECKER', dept: 'ops',       grid: [0, 2], hair: '#5a3a1a', skin: '#C68B59' },
-  { id: 'report', name: 'INTERNAL REPORTING', dept: 'ops',       grid: [1, 2], hair: '#2e2118', skin: '#E8B98E' },
-  { id: 'dash',  name: 'INTERNAL DASHBOARDS', dept: 'ops',       grid: [0.5, 3], hair: '#0d0d0d', skin: '#9C6B43' },
-  // FINANCE (4) — the accounting team; Accounting Lead at the head
-  { id: 'alead', name: 'ACCOUNTING LEAD',     dept: 'fin',       lead: true,  grid: [0.5, 0], hair: '#1f1f1f', skin: '#E0A878' },
-  { id: 'invo',  name: 'INVOICING',           dept: 'fin',       grid: [0, 1], hair: '#4a2a10', skin: '#F5D5B0' },
-  { id: 'apay',  name: 'ACCOUNTS PAYABLE',    dept: 'fin',       grid: [1, 1], hair: '#0a0a0a', skin: '#8A5A32' },
-  { id: 'recon', name: 'RECONCILIATION',      dept: 'fin',       grid: [0.5, 2], hair: '#33221a', skin: '#E8B98E' },
-  // DELIVERY (7) — new pod, 5 Sep 2026; Onboarder moved in from Sales
-  { id: 'dlead', name: 'DELIVERY LEAD',       dept: 'delivery',  lead: true,  grid: [0.5, 0], hair: '#1f1f1f', skin: '#F0C9A0' },
-  { id: 'pco',   name: 'PROJECT CO-ORDINATOR', dept: 'delivery', grid: [0, 1], hair: '#3d2814', skin: '#E8B98E' },
-  { id: 'qa',    name: 'QUALITY ASSURANCE CHECKER', dept: 'delivery', grid: [1, 1], hair: '#101820', skin: '#C68B59' },
-  { id: 'crep',  name: 'CLIENT REPORTS',      dept: 'delivery',  grid: [0, 2], hair: '#6b3410', skin: '#F5D5B0' },
-  { id: 'cass',  name: 'CLIENT ASSETS',       dept: 'delivery',  grid: [1, 2], hair: '#141414', skin: '#D9A97E' },
-  { id: 'dasst', name: 'DESIGNER ASSISTANT',  dept: 'delivery',  grid: [0, 3], hair: '#552200', skin: '#F0C9A0' },
-  { id: 'ona',   name: 'ONBOARDER',           dept: 'delivery',  grid: [1, 3], hair: '#0d0d0d', skin: '#9C6B43' },
+  // EXECUTIVE — CEO & Orchestrator
+  { id: 'ceo',                  name: 'CHIEF EXECUTIVE OFFICER', dept: 'exec',         lead: true, is_ceo: true, grid: [0, 0], hair: '#1c1917', skin: '#F5D5B0' },
+  { id: 'growth-ceo',           name: 'GROWTH CEO',              dept: 'exec',         grid: [1, 0], hair: '#1c1917', skin: '#F5D5B0' },
+
+  // FOUNDATIONS (Attract/Plan)
+  { id: 'foundations-head',     name: 'FOUNDATIONS HEAD',        dept: 'foundations',  lead: true,  grid: [0.5, 0], hair: '#0a0907', skin: '#E8B98E' },
+  { id: 'icp-builder',          name: 'ICP BUILDER',             dept: 'foundations',  grid: [0, 1], hair: '#3b2b1d', skin: '#F0C9A0' },
+  { id: 'niche-architect',      name: 'NICHE ARCHITECT',         dept: 'foundations',  grid: [1, 1], hair: '#111111', skin: '#C68B59' },
+  { id: 'offer-architect',      name: 'OFFER ARCHITECT',         dept: 'foundations',  grid: [0, 2], hair: '#7a3b12', skin: '#F5D5B0' },
+  { id: 'brand-voice',          name: 'BRAND VOICE SPECIALIST',  dept: 'foundations',  grid: [1, 2], hair: '#4a2a10', skin: '#D89F70' },
+  { id: 'financial-modeler',    name: 'FINANCIAL MODELER',       dept: 'foundations',  grid: [0.5, 3], hair: '#2b2b2b', skin: '#E0A878' },
+  { id: 'researcher',           name: 'RESEARCHER',              dept: 'foundations',  grid: [0, 4], hair: '#1e243b', skin: '#F5D5B0' },
+  { id: 'legal',                name: 'LEGAL REVIEW',            dept: 'foundations',  grid: [1, 4], hair: '#20242e', skin: '#F0C9A0' },
+  { id: 'invo',                 name: 'INVOICING',               dept: 'foundations',  grid: [0.5, 5], hair: '#4a2a10', skin: '#F5D5B0' },
+
+  // MARKETING (Attract/Attention)
+  { id: 'mlead',                name: 'MARKETING LEAD',          dept: 'marketing',    lead: true,  grid: [0.5, 0], hair: '#c69a5c', skin: '#E0A878' },
+  { id: 'marketing-head',       name: 'MARKETING HEAD',          dept: 'marketing',    grid: [0, 1], hair: '#2a1a0e', skin: '#E0A878' },
+  { id: 'content-strategist',   name: 'CONTENT STRATEGIST',      dept: 'marketing',    grid: [1, 1], hair: '#8a4a1f', skin: '#F5D5B0' },
+  { id: 'short-form',           name: 'SHORT FORM CREATOR',      dept: 'marketing',    grid: [0, 2], hair: '#26140a', skin: '#D89F70' },
+  { id: 'youtube-producer',     name: 'YOUTUBE PRODUCER',        dept: 'marketing',    grid: [1, 2], hair: '#141414', skin: '#F0C9A0' },
+  { id: 'linkedin-writer',      name: 'LINKEDIN WRITER',         dept: 'marketing',    grid: [0, 3], hair: '#3d2814', skin: '#C68B59' },
+  { id: 'twitter-writer',       name: 'TWITTER WRITER',          dept: 'marketing',    grid: [1, 3], hair: '#552200', skin: '#E8B98E' },
+  { id: 'paid-ads',             name: 'PAID ADS STRATEGIST',     dept: 'marketing',    grid: [0.5, 4], hair: '#1b1b24', skin: '#D9A97E' },
+  { id: 'newt',                 name: 'PODCAST NOTES',           dept: 'marketing',    grid: [0, 5], hair: '#222222', skin: '#E8B98E' },
+
+  // SALES (Convert/Capture)
+  { id: 'lexi',                 name: 'SALES LEAD',              dept: 'sales',        lead: true,  grid: [0.5, 0], hair: '#5a2d0c', skin: '#F0C9A0' },
+  { id: 'sales-head',           name: 'SALES HEAD',              dept: 'sales',        grid: [0, 1], hair: '#1c1c2e', skin: '#E0A878' },
+  { id: 'funnel-architect',     name: 'FUNNEL ARCHITECT',        dept: 'sales',        grid: [1, 1], hair: '#2b1a0e', skin: '#E8B98E' },
+  { id: 'sales-scripter',       name: 'SALES SCRIPTER',          dept: 'sales',        grid: [0, 2], hair: '#26140a', skin: '#F5D5B0' },
+  { id: 'sales-ops',            name: 'SALES OPS',               dept: 'sales',        grid: [1, 2], hair: '#2a1a0e', skin: '#E8B98E' },
+  { id: 'vsl-builder',          name: 'VSL BUILDER',             dept: 'sales',        grid: [0, 3], hair: '#2d1a0a', skin: '#F0C9A0' },
+  { id: 'vsl-writer',           name: 'VSL WRITER',              dept: 'sales',        grid: [1, 3], hair: '#171717', skin: '#F5D5B0' },
+  { id: 'webinar-producer',     name: 'WEBINAR PRODUCER',        dept: 'sales',        grid: [0, 4], hair: '#33221a', skin: '#C68B59' },
+  { id: 'lead-magnet-designer', name: 'LEAD MAGNET DESIGNER',    dept: 'sales',        grid: [1, 4], hair: '#4a2a10', skin: '#D89F70' },
+  { id: 'piper',                name: 'PROPOSALS',               dept: 'sales',        grid: [0, 5], hair: '#2d1a0a', skin: '#F0C9A0' },
+  { id: 'folo',                 name: 'FOLLOW UPS',              dept: 'sales',        grid: [1, 5], hair: '#171717', skin: '#F5D5B0' },
+
+  // NURTURE (Convert/Trust)
+  { id: 'olead',                name: 'NURTURE HEAD',            dept: 'nurture',      lead: true,  grid: [0.5, 0], hair: '#1f1f1f', skin: '#E8B98E' },
+  { id: 'nurture-head',         name: 'NURTURE LEAD',            dept: 'nurture',      grid: [0, 1], hair: '#1f1f1f', skin: '#E8B98E' },
+  { id: 'email-copywriter',     name: 'EMAIL COPYWRITER',        dept: 'nurture',      grid: [1, 1], hair: '#2b2b2b', skin: '#F0C9A0' },
+  { id: 'stories-producer',     name: 'STORIES PRODUCER',        dept: 'nurture',      grid: [0, 2], hair: '#111111', skin: '#C68B59' },
+  { id: 'case-study-producer',  name: 'CASE STUDY PRODUCER',     dept: 'nurture',      grid: [1, 2], hair: '#7a3b12', skin: '#F5D5B0' },
+  { id: 'show-rate-ops',        name: 'SHOW RATE OPS',           dept: 'nurture',      grid: [0, 3], hair: '#4a2a10', skin: '#D89F70' },
+  { id: 'cmail',                name: 'CLIENT EMAILS',           dept: 'nurture',      grid: [1, 3], hair: '#3b2b1d', skin: '#F0C9A0' },
+  { id: 'imail',                name: 'INTERNAL EMAILS',         dept: 'nurture',      grid: [0.5, 4], hair: '#111111', skin: '#C68B59' },
+
+  // LAUNCH (Deploy)
+  { id: 'dlead',                name: 'LAUNCH HEAD',             dept: 'launch',       lead: true,  grid: [0.5, 0], hair: '#a16a2e', skin: '#F0C9A0' },
+  { id: 'launch-head',          name: 'LAUNCH LEAD',             dept: 'launch',       grid: [0, 1], hair: '#3d2814', skin: '#E8B98E' },
+  { id: 'launch-manager',       name: 'LAUNCH MANAGER',          dept: 'launch',       grid: [1, 1], hair: '#3d2814', skin: '#E8B98E' },
+  { id: 'post-launch-analyst',  name: 'POST LAUNCH ANALYST',     dept: 'launch',       grid: [0, 2], hair: '#101820', skin: '#C68B59' },
+  { id: 'qa',                   name: 'QUALITY ASSURANCE',       dept: 'launch',       grid: [1, 2], hair: '#101820', skin: '#C68B59' },
+
+  // PARTNERSHIPS (Scale/Leverage)
+  { id: 'alead',                name: 'PARTNERSHIPS HEAD',       dept: 'partnerships', lead: true,  grid: [0.5, 0], hair: '#1f1f1f', skin: '#E0A878' },
+  { id: 'partnerships-head',    name: 'PARTNERSHIPS LEAD',       dept: 'partnerships', grid: [0, 1], hair: '#1f1f1f', skin: '#E0A878' },
+  { id: 'jv-outreach',          name: 'JV OUTREACH SPECIALIST',  dept: 'partnerships', grid: [1, 1], hair: '#4a2a10', skin: '#F5D5B0' },
+  { id: 'affiliate-architect',  name: 'AFFILIATE ARCHITECT',     dept: 'partnerships', grid: [0, 2], hair: '#0a0a0a', skin: '#8A5A32' },
+  { id: 'referral-designer',    name: 'REFERRAL DESIGNER',       dept: 'partnerships', grid: [1, 2], hair: '#33221a', skin: '#E8B98E' },
+
+  // SCALE (Scale/Deliver)
+  { id: 'elead',                name: 'SCALE HEAD',              dept: 'scale',        lead: true,  grid: [0.5, 0], hair: '#111111', skin: '#F0C9A0' },
+  { id: 'scale-head',           name: 'SCALE LEAD',              dept: 'scale',        grid: [0, 1], hair: '#111111', skin: '#F0C9A0' },
+  { id: 'competitor-analyst',   name: 'COMPETITOR ANALYST',      dept: 'scale',        grid: [1, 1], hair: '#0a0907', skin: '#E8B98E' },
+  { id: 'revenue-analyst',      name: 'REVENUE ANALYST',         dept: 'scale',        grid: [0, 2], hair: '#101820', skin: '#B07850' },
+  { id: 'client-success',       name: 'CLIENT SUCCESS',          dept: 'scale',        grid: [1, 2], hair: '#20242e', skin: '#F0C9A0' },
+  { id: 'sop-builder',          name: 'SOP BUILDER',             dept: 'scale',        grid: [0, 3], hair: '#5a3a1a', skin: '#C68B59' },
+  { id: 'talent-recruiter',     name: 'TALENT RECRUITER',        dept: 'scale',        grid: [1, 3], hair: '#2e2118', skin: '#E8B98E' },
+  { id: 'pete',                 name: 'OPERATIONS SPECIALIST',   dept: 'scale',        grid: [0.5, 4], hair: '#111111', skin: '#F0C9A0' },
 ];
 
 export interface LayoutConfig {
@@ -123,7 +154,7 @@ const DEFAULT_LAYOUTS: Record<string, LayoutConfig> = {
   ops:       { pos: [0, 48],    w: 20, d: 30 },
 };
 
-export const CORE_DEPTS = new Set(['exec', 'emails', 'sales', 'marketing', 'ops', 'fin', 'delivery', 'brain']);
+export const CORE_DEPTS = new Set(['exec', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale', 'brain']);
 
 export function getSymmetricPos(key: string): [number, number] {
   if (key === 'brain') return [0, 0];

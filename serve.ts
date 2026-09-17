@@ -41,6 +41,8 @@ import * as learn from './learn.ts';
 import * as onboard from './onboard.ts';
 import * as routines from './routines.ts';
 import * as usage from './usage.ts';
+import { getAgentContext, saveTaskAsMemory } from './context.ts';
+import { executeGraph, GraphState } from './graph-harness.ts';
 import { normModel, modelFor, modelArgs, modelId, modelName, MODELS, MODEL_KEYS, DEFAULT_MODEL, normEffort, effortFor, effortName, EFFORT_KEYS } from './src/models.ts';
 import { parseWhen, describe, valid as validWhen, untilText } from './src/when.ts';
 
@@ -93,10 +95,22 @@ if (process.env.ANTHROPIC_API_KEY) {
   } catch (e: any) { console.warn('SDK not installed (npm install @anthropic-ai/sdk) — using the Claude CLI:', e.message.split('\n')[0]); }
 }
 
-/* ---------- storage ---------- */
-const load = (): any[] => { try { return JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { return []; } };
-const save = (list: any[]) => { fs.mkdirSync(DATA, { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(list, null, 2)); };
+/* ---------- storage: DB-first pipeline ---------- */
+// load() reads from SQLite (single source of truth). tasks.json is legacy backup only.
+const load = (): any[] => db.getTasks();
+// save() is a shim kept for the routines tick and approval paths that still reference it.
+// It writes each task into the DB individually.
+const save = (list: any[]) => { for (const t of list) db.addTask(t); };
 const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+/* ---------- SSE event bus: push agent events to the browser in real time ---------- */
+const sseClients = new Set<http.ServerResponse>();
+function pushEvent(type: string, payload: any) {
+  const data = `data: ${JSON.stringify({ type, ...payload })}
+
+`;
+  for (const c of sseClients) { try { c.write(data); } catch { sseClients.delete(c); } }
+}
 /* ---------- the usage gauge (V3.6, A3): Claude's own numbers, the office's count underneath ---------- */
 const USTATE = usage.loadState(DATA);
 let usageCache: { at: number; value: any; stale: boolean } = { at: 0, value: null, stale: true };
@@ -142,14 +156,16 @@ async function askX(system: string, user: string, { maxTokens = 4000, tools = tr
   claudeArgs.push(...modelArgs(model, effort));
 
   let isAgy = (bin === 'agy' || bin.endsWith('/agy'));
+  let fullPrompt = system ? `${system}\n\nUSER REQUEST:\n${user}` : user;
+  if (fullPrompt.length > 120000) {
+    fullPrompt = fullPrompt.slice(0, 120000) + '\n\n[... prompt context capped for CLI execution]';
+  }
   if (isHermes) {
-    const fullPrompt = system ? `${system}\n\nUSER REQUEST:\n${user}` : user;
     args = ['-z', fullPrompt];
     if (mObj.flag) args.push('-m', mObj.flag);
     const eff = normEffort(effort) || mObj.effort;
     if (eff) args.push('--reasoning', eff);
   } else if (isAgy) {
-    const fullPrompt = system ? `${system}\n\nUSER REQUEST:\n${user}` : user;
     args = ['-p', fullPrompt, '--output-format', 'stream-json', '--dangerously-skip-permissions'];
     if (mObj.flag && mObj.flag !== 'antigravity-flash' && !mObj.flag.startsWith('antigravity')) {
       args.push('--model', mObj.flag);
@@ -283,51 +299,152 @@ async function route(dept: string, text: string) {
     eta: Number.isFinite(j.eta_minutes) ? j.eta_minutes : 30, why: String(j.why || ''), needsOk: typeof j.needs_ok === 'boolean' ? j.needs_ok : routines.guessNeedsOk(text) };
 }
 
-async function run(task: any, feedback?: string, mode?: string) { // mode: undefined (a task from the bar) · 'routine' (read-only routine) · 'draft' (routine that waits for the OK) · 'approve' (the owner ticked it)
+/* ---------- CEO orchestrator: cross-department task fan-out ---------- */
+async function orchestrate(text: string, parentTaskId: string, model?: string): Promise<string> {
+  const activeDepts = DEPT_KEYS.filter(k => k !== 'brain' && k !== 'exec' && AGENTS.some(a => a.department === k));
+  // Phase 1: CEO decomposes the task into per-dept sub-tasks
+  const ceo = AGENTS.find(a => a.is_ceo || a.id === 'ceo') || AGENTS.find(a => a.department === 'exec')!;
+  const decompSystem = `You are ${ceo.name}, CEO of ${cfg.name}. Decompose the owner's request into targeted sub-tasks for each relevant department. Return ONLY a JSON array — no prose, no code fences.`;
+  const decompUser = `Request: "${text}"\nDepartments available: ${activeDepts.map(k => `${k} (${DEPTS[k].name})`).join(', ')}\n` +
+    'Return: [{"dept":"<key>","task":"<specific task for that department, one sentence>"},...] — only include departments that are genuinely needed. Maximum 6 items.';
+  let subTasks: { dept: string; task: string }[] = [];
+  try {
+    const raw = await ask(decompSystem, decompUser, { maxTokens: 600, timeout: 90000, model: model || cfg.model });
+    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    subTasks = Array.isArray(parsed) ? parsed.filter(x => x.dept && x.task && DEPTS[x.dept]) : [];
+  } catch (e: any) {
+    console.warn('orchestrate: decompose failed:', e.message);
+    // Fallback: send to all active departments
+    subTasks = activeDepts.map(dept => ({ dept, task: text }));
+  }
+  if (!subTasks.length) return `CEO: no department sub-tasks identified for "${text}".`;
+
+  console.log(`🎯 CEO orchestrating "${text.slice(0, 60)}" → ${subTasks.length} departments`);
+  db.logAgentEvent('orchestrate', ceo.id, { taskId: parentTaskId, payload: { subTasks } });
+
+  // Phase 2: Fan out sub-tasks in parallel
+  const results = await Promise.allSettled(subTasks.map(async ({ dept, task }) => {
+    const r = await route(dept, task);
+    const subTask: any = {
+      id: nid(), dept, agent: r.agent, title: r.title, text: task,
+      plan: r.plan, eta: r.eta, why: r.why, priority: 'HIGH',
+      state: 'doing', addedAt: Date.now(), startedAt: Date.now(), by: 'ceo',
+      model: model || undefined
+    };
+    db.addTask(subTask);
+    db.linkTaskGraph(subTask.id, parentTaskId, dept, DEPTS[dept].name);
+    db.logAgentEvent('handoff', ceo.id, { toAgent: r.agent, taskId: subTask.id, payload: { dept, task } });
+    pushEvent('agent_event', { eventType: 'handoff', fromAgent: ceo.id, toAgent: r.agent, taskId: subTask.id, dept });
+    try {
+      const out = await run(subTask);
+      Object.assign(subTask, { state: 'done', doneAt: Date.now(), result: out.result, read: out.read, tools: out.tools, used: out.used, error: false });
+      db.addTask(subTask);
+      db.logAgentEvent('result', r.agent, { toAgent: ceo.id, taskId: subTask.id, payload: { dept, result: out.result.slice(0, 200) } });
+      pushEvent('task_done', { taskId: subTask.id, dept, agent: r.agent, title: subTask.title });
+      saveTaskAsMemory(subTask, r.agent, dept);
+      return { dept, deptName: DEPTS[dept].name, agent: r.agent, title: r.title, result: out.result };
+    } catch (e: any) {
+      Object.assign(subTask, { state: 'done', doneAt: Date.now(), result: `Error: ${e.message}`, error: true });
+      db.addTask(subTask);
+      return { dept, deptName: DEPTS[dept].name, agent: r.agent, title: r.title, result: `[error] ${e.message}` };
+    }
+  }));
+
+  const settled = results.map((r, i) => r.status === 'fulfilled' ? r.value : { dept: subTasks[i].dept, deptName: DEPTS[subTasks[i].dept]?.name || subTasks[i].dept, agent: '?', title: '?', result: `[failed] ${(r as any).reason?.message}` });
+
+  // Phase 3: CEO synthesizes a cross-department summary
+  const synSystem = `You are ${ceo.name}, CEO of ${cfg.name}. Synthesize the department reports below into a single executive summary for the owner. Plain text: one short heading per department, then an overall conclusion. Under 350 words total.`;
+  const synUser = `Original request: "${text}"\n\nDepartment Results:\n${settled.map(s => `## ${s.deptName} (${s.agent})\n${s.result}`).join('\n\n')}`;
+  const summary = await ask(synSystem, synUser, { maxTokens: 1000, timeout: 120000, model: model || cfg.model });
+  return summary;
+}
+
+async function run(task: any, feedback?: string, mode?: string) { // mode: undefined (a task from the bar) · 'routine' · 'draft' · 'approve'
   const a = AGENTS.find(x => x.id === task.agent)!, d = DEPTS[a.department];
   refreshSkills();
-  const index = vaultIndex();
-  const read = relevantNotes(index, a.department, task.title + ' ' + task.text);
+  // Use the hybrid context engine (DB memories first, markdown vault as fallback)
+  const ctx = await getAgentContext(a.id, a.department, task.title + ' ' + task.text, BRAIN, cfg.name);
   const system = `You are ${a.name}, ${a.role || 'an agent'}, in the ${d.name} department of ${cfg.name}. ${a.does}\n${agentBrief(a)}` +
     'Write the finished deliverable itself, not a description of what you would do. Plain text: a short heading, then short sections or bullets. ' +
     'At most 260 words unless a skill or the owner\'s instructions set a different shape — those win. No preamble, no sign-off. Ground it in the company notes below; where a fact is missing, make a reasonable assumption and mark it (assumed). ' +
     'If you used a tool, say so in one line at the end ("Used: Gmail — searched the client thread").\n\n' +
-    `${mcp.promptText(a.tools)}\n\nCOMPANY NOTES\n${businessContext(index)}\n\nNOTES YOU READ FOR THIS TASK\n${contextText(index, read)}`;
+    `${mcp.promptText(a.tools)}\n\nCOMPANY NOTES\n${ctx.businessContext}\n\nMEMORIES & RELEVANT NOTES\n${ctx.relevantMemories}` +
+    (ctx.recentWork ? `\n\nYOUR RECENT WORK\n${ctx.recentWork}` : '');
   const routineLine = task.routine ? `\nThis is a routine (${task.when}): it runs on the office's own clock and the owner is not at the keyboard. It is now ${new Date().toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}${task.late ? `; this run is late, it was due ${new Date(task.due).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}. Do the work for now.` : '';
   const modeLine = mode === 'draft' ? '\nPrepare everything, but send, post, pay or change NOTHING outside this machine: the owner reads this first and approves it. End with one line saying exactly what will go out when approved (or that nothing needs to).'
     : mode === 'approve' ? `\nThe owner has APPROVED the draft below. Carry out the outbound step now, exactly as drafted, with your tools (send, post, update). If a tool you need is not connected, say so and show what you would have sent. Then report in one short section: what went out, to whom, and anything that did not.\nApproved draft:\n${task.draft || task.result}` : '';
   const user = `Task: ${task.title}\nOwner's request: ${task.text}` + (task.plan?.length ? `\nAgreed plan: ${task.plan.join(' → ')}` : '') + routineLine + modeLine +
     (feedback && mode !== 'approve' ? `\n\nThe owner reviewed your previous version and asked for changes: "${feedback}"\nPrevious version:\n${task.result}` : '');
-  const pick = modelFor({ task: task.model, routine: task.routineModel, agent: a.model, office: cfg.model }); // four places, one precedence
-  const eff = effortFor({ task: task.effort, routine: task.routineEffort, agent: a.effort, office: cfg.effort, model: pick.model }); // same places, then the model's own
+  const pick = modelFor({ task: task.model, routine: task.routineModel, agent: a.model, office: cfg.model });
+  const eff = effortFor({ task: task.effort, routine: task.routineEffort, agent: a.effort, office: cfg.effort, model: pick.model });
   const { text, tools, modelId: ran } = await askX(system, user, { model: pick.model, effort: eff.effort });
   if (!text) throw new Error('Claude returned nothing');
-  return { result: text, read, tools: toolKeys(tools), used: mcp.namesOf(tools), skills: skills.names(a), modelUsed: pick.model, modelFrom: pick.from, modelId: ran, effortUsed: eff.effort || '', effortFrom: eff.from };
+  return { result: text, read: ctx.readNames, tools: toolKeys(tools), used: mcp.namesOf(tools), skills: skills.names(a), modelUsed: pick.model, modelFrom: pick.from, modelId: ran, effortUsed: eff.effort || '', effortFrom: eff.from };
+}
+
+function writeThoughtLog(task: any) {
+  try {
+    fs.mkdirSync(NOTES_DIR, { recursive: true });
+    const a = AGENTS.find(x => x.id === task.agent) || { name: task.agent, department: task.dept };
+    const deptName = DEPTS[task.dept]?.name || task.dept;
+    const nowStr = new Date().toISOString();
+
+    const noteName = `task-${task.id.slice(-8)}-${slug(task.title || 'untitled')}`;
+    const taskNotePath = path.join(NOTES_DIR, `${noteName}.md`);
+    
+    const noteContent = 
+      `---\n` +
+      `task_id: ${task.id}\n` +
+      `state: ${task.state}\n` +
+      `agent: ${a.name}\n` +
+      `department: ${deptName}\n` +
+      `updated: ${nowStr}\n` +
+      `---\n\n` +
+      `# ${task.title || 'Task Thought Process'}\n\n` +
+      `**Agent**: ${a.name} (${deptName})\n` +
+      `**Status**: ${task.state.toUpperCase()}\n` +
+      `**Request**: ${task.text || task.title}\n\n` +
+      (task.plan?.length ? `### Strategy & Plan\n${task.plan.map((s: any) => `- ${s}`).join('\n')}\n\n` : '') +
+      (task.result ? `### Deliverable & Output\n${task.result}\n\n` : '') +
+      `---\n*Recorded in Company Thought Log memory graph*\n`;
+
+    fs.writeFileSync(taskNotePath, noteContent);
+
+    const masterPath = path.join(NOTES_DIR, 'Company Thought Log.md');
+    const entry = `- [${nowStr.slice(11, 19)}] **${a.name}** (${deptName}): [[${noteName}]] — state: \`${task.state}\` (${(task.title || '').slice(0, 60)})\n`;
+    let masterText = fs.existsSync(masterPath) ? fs.readFileSync(masterPath, 'utf8') : '# Company Thought Log & Memory Graph\n\nLive stream of agent thought processes, decisions, and execution trajectories.\n\n';
+    if (!masterText.includes(noteName)) {
+      masterText += entry;
+      fs.writeFileSync(masterPath, masterText);
+    }
+  } catch (e: any) {
+    console.warn('writeThoughtLog warning:', e.message);
+  }
 }
 
 function writeNote(task: any): string { // the deliverable becomes a note in the brain, linked to what was read
   fs.mkdirSync(NOTES_DIR, { recursive: true });
-  const a = AGENTS.find(x => x.id === task.agent)!;
-  const name = `${new Date(task.doneAt).toISOString().slice(0, 10)} ${slug(task.title)}`;
-  const body = `---\nagent: ${a.name}\ndepartment: ${DEPTS[a.department].name}\ntask: ${task.id}\ndone: ${new Date(task.doneAt).toISOString()}${task.used?.length ? '\ntools: ' + task.used.join(', ') : ''}${task.skills?.length ? '\nskills: ' + task.skills.join(', ') : ''}${task.routine ? '\nroutine: ' + task.when + (task.late ? ' (late)' : '') : ''}${task.modelUsed ? '\nmodel: ' + modelName(task.modelUsed) + (task.modelFrom && task.modelFrom !== 'office' ? ' (' + task.modelFrom + ')' : '') : ''}${task.effortUsed ? '\neffort: ' + task.effortUsed + (task.effortFrom && task.effortFrom !== 'model' ? ' (' + task.effortFrom + ')' : '') : ''}${task.approved ? '\napproved: ' + new Date(task.approvedAt).toISOString() : ''}\n---\n` +
+  const a = AGENTS.find(x => x.id === task.agent) || { name: task.agent, department: task.dept };
+  const name = `${new Date(task.doneAt || Date.now()).toISOString().slice(0, 10)} ${slug(task.title)}`;
+  const body = `---\nagent: ${a.name}\ndepartment: ${DEPTS[a.department]?.name || a.department}\ntask: ${task.id}\ndone: ${new Date(task.doneAt || Date.now()).toISOString()}${task.used?.length ? '\ntools: ' + task.used.join(', ') : ''}${task.skills?.length ? '\nskills: ' + task.skills.join(', ') : ''}${task.routine ? '\nroutine: ' + task.when + (task.late ? ' (late)' : '') : ''}${task.modelUsed ? '\nmodel: ' + modelName(task.modelUsed) + (task.modelFrom && task.modelFrom !== 'office' ? ' (' + task.modelFrom + ')' : '') : ''}${task.effortUsed ? '\neffort: ' + task.effortUsed + (task.effortFrom && task.effortFrom !== 'model' ? ' (' + task.effortFrom + ')' : '') : ''}${task.approved ? '\napproved: ' + new Date(task.approvedAt).toISOString() : ''}\n---\n` +
     `# ${task.title}\n\n${task.result}\n\n---\nRead: ${(task.read || []).map((n: string) => `[[${n}]]`).join(' · ') || '—'}\n`;
   fs.writeFileSync(path.join(NOTES_DIR, name + '.md'), body);
+  writeThoughtLog(task);
   return name;
 }
 
 async function chat(agentId: string, text: string, history?: any[]) {
   const a = AGENTS.find(x => x.id === agentId); if (!a) throw new Error('unknown agent');
   const d = DEPTS[a.department]; refreshSkills();
-  const index = vaultIndex();
-  const read = relevantNotes(index, a.department, text, 3);
-  const mine = load().filter(t => t.agent === agentId).slice(-6).map(t => `- [${t.state}] ${t.title}`).join('\n');
+  const ctx = await getAgentContext(a.id, a.department, text, BRAIN, cfg.name);
+  const mine = db.getTasksByDept(a.department).filter(t => t.agent === agentId).slice(0, 6).map(t => `- [${t.state}] ${t.title}`).join('\n');
   const system = `You are ${a.name}, ${a.role || 'an agent'}, in the ${d.name} department of ${cfg.name}. ${a.does}\n${agentBrief(a)}` +
     'You are talking to the owner. Answer as this agent, in first person, briefly (under 120 words unless asked for detail), plainly, no hype. ' +
     'Use the company notes; say when something is not in them. If the owner asks you to look something up, use your tools. Nothing outbound is sent without the owner\'s explicit say-so.\n\n' +
-    `${mcp.promptText(a.tools)}\n\nCOMPANY NOTES\n${businessContext(index)}\n\nRELEVANT NOTES\n${contextText(index, read)}\n\nYOUR RECENT TASKS\n${mine || '—'}`;
+    `${mcp.promptText(a.tools)}\n\nCOMPANY NOTES\n${ctx.businessContext}\n\nMEMORIES & RELEVANT NOTES\n${ctx.relevantMemories}\n\nYOUR RECENT TASKS\n${mine || '—'}`;
   const convo = (history || []).slice(-8).map(m => `${m.who === 'user' ? 'Owner' : a.name}: ${m.text}`).join('\n');
   const { text: reply, tools } = await askX(system, (convo ? convo + '\n' : '') + `Owner: ${text}\n${a.name}:`, { maxTokens: 1200, model: modelFor({ agent: a.model, office: cfg.model }).model, effort: effortFor({ agent: a.effort, office: cfg.effort, model: modelFor({ agent: a.model, office: cfg.model }).model }).effort });
-  return { reply, read, tools: toolKeys(tools), used: mcp.namesOf(tools) };
+  return { reply, read: ctx.readNames, tools: toolKeys(tools), used: mcp.namesOf(tools) };
 }
 
 /* ---------- routines: the office's own clock (V3.5) ---------- */
@@ -348,28 +465,110 @@ let queue: Promise<any> = Promise.resolve();
 const enqueue = (fn: () => Promise<any>) => { const p = queue.then(fn, fn); queue = p.catch(() => {}); return p; };
 function fire(r: any, { due = Date.now(), late = false, by = 'routine' } = {}) { // the routine becomes a task and runs here, page or no page
   const task = { id: nid(), dept: r.dept, agent: r.agent, title: r.title, text: r.text, plan: r.plan || [], eta: 15, why: '', state: 'next', addedAt: Date.now(), by, routine: r.id, when: r.desc || describe(r.when), needsOk: r.needsOk, due, late, routineModel: r.model || undefined, routineEffort: r.effort || undefined };
-  const list = load(); list.push(task); save(list);
+  db.addTask(task);
   routines.advance(RSTATE, r, Date.now(), task.id, late); routines.saveState(DATA, RSTATE);
   console.log(`⏱ ${task.id} → ${task.agent}: ${task.title}${late ? ' (LATE · was due ' + new Date(due).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ')' : ''}`);
   enqueue(() => runServerTask(task.id));
   return task;
 }
 
+function manageDepartmentTraffic(deptKey: string) {
+  const CORE_LEADS = ['ceo', 'elead', 'lexi', 'olead', 'flead', 'mlead', 'dlead', 'brainlead', 'exec', 'emails', 'sales', 'ops', 'fin', 'marketing', 'delivery', 'brain'];
+  const tasks = db.getTasksByDept(deptKey).filter(t => t.state === 'next' || t.state === 'doing');
+  const existingAgents = AGENTS.filter(a => a.department === deptKey);
+
+  if (tasks.length > 1 && existingAgents.length < 5) {
+    const specId = `${deptKey}_spec_${Date.now().toString(36).slice(-4)}`;
+    const newAgent = {
+      id: specId,
+      department: deptKey,
+      lead: false,
+      is_ceo: false,
+      name: `${deptKey.toUpperCase()} SPECIALIST`,
+      role: `Dynamic ${DEPTS[deptKey]?.name || deptKey} Specialist`,
+      does: `Spawned to handle task traffic surge in ${DEPTS[deptKey]?.name || deptKey}.`,
+      tools: JSON.stringify(['gmail', 'notion', 'web']),
+      brief: 'Focus on resolving queued tasks quickly with high accuracy.'
+    };
+    db.addAgent(newAgent);
+    refreshSkills();
+    pushEvent('agent_spawned', { agentId: specId, dept: deptKey, traffic: tasks.length });
+  } else if (tasks.length === 0) {
+    const toDisband = existingAgents.filter(a => !a.lead && !a.is_ceo && !CORE_LEADS.includes(a.id));
+    if (toDisband.length > 0) {
+      for (const a of toDisband) {
+        db.deleteAgent(a.id);
+        pushEvent('agent_disbanded', { agentId: a.id, dept: deptKey });
+      }
+      refreshSkills();
+    }
+  }
+}
+
 async function runServerTask(id: string, { feedback, approve }: { feedback?: string; approve?: boolean } = {}): Promise<any> {
-  let list = load(); const task = list.find(t => t.id === id); if (!task) return null;
-  task.state = 'doing'; task.startedAt = Date.now(); delete task.ask; save(list);
+  const task = db.getTaskById(id); if (!task) return null;
+  manageDepartmentTraffic(task.dept);
+  task.state = 'doing'; task.startedAt = Date.now(); delete task.ask;
+  db.updateTask(id, { state: 'doing', startedAt: task.startedAt });
+  pushEvent('task_start', { taskId: id, agent: task.agent, dept: task.dept });
   try {
-    const out = await run(task, feedback, approve ? 'approve' : task.needsOk ? 'draft' : 'routine');
-    if (approve) { task.result = (task.draft || task.result) + '\n\n---\nAFTER YOUR OK\n' + out.result; task.approved = true; task.approvedAt = Date.now(); }
-    else task.result = out.result;
-    Object.assign(task, { read: out.read, tools: [...new Set([...(task.tools || []), ...out.tools])], used: [...new Set([...(task.used || []), ...out.used])], skills: out.skills, error: false, modelUsed: out.modelUsed, modelFrom: out.modelFrom, modelId: out.modelId, effortUsed: out.effortUsed, effortFrom: out.effortFrom });
-    if (task.needsOk && !approve) { task.state = 'waiting'; task.draft = out.result; task.waitingAt = Date.now(); task.ask = routines.askLine(task); }
-    else { task.state = 'done'; task.doneAt = Date.now(); task.note = writeNote(task); await rebuildGraph(); }
+    const helpers = {
+      ask,
+      runTask: (t: any, fb?: string) => run(t, fb, approve ? 'approve' : task.needsOk ? 'draft' : 'routine'),
+      pushEvent
+    };
+
+    const initialState: GraphState = {
+      taskId: id,
+      dept: task.dept,
+      agentId: task.agent,
+      request: task.text || task.title,
+      plan: Array.isArray(task.plan) ? task.plan : (typeof task.plan === 'string' ? JSON.parse(task.plan) : []),
+      attempts: 1,
+      maxAttempts: 3,
+      history: [],
+      status: 'planning'
+    };
+
+    const finalState = await executeGraph(initialState, helpers);
+
+    if (approve) {
+      task.result = (task.draft || task.result) + '\n\n---\nAFTER YOUR OK\n' + (finalState.draftResult || '');
+      task.approved = true;
+      task.approvedAt = Date.now();
+    } else {
+      task.result = finalState.draftResult || 'Task completed.';
+    }
+
+    Object.assign(task, {
+      read: finalState.readNotes,
+      tools: finalState.usedTools,
+      used: finalState.usedTools,
+      skills: finalState.skillsUsed,
+      error: false,
+      modelUsed: finalState.modelUsed,
+      effortUsed: finalState.effortUsed
+    });
+
+    if (task.needsOk && !approve) {
+      task.state = 'waiting';
+      task.draft = task.result;
+      task.waitingAt = Date.now();
+      task.ask = routines.askLine(task);
+    } else {
+      task.state = 'done';
+      task.doneAt = Date.now();
+      task.note = writeNote(task);
+      await rebuildGraph();
+      saveTaskAsMemory(task, task.agent, task.dept);
+    }
   } catch (e: any) {
     Object.assign(task, { state: 'done', doneAt: Date.now(), result: 'Could not complete this task: ' + e.message, error: true });
   }
-  list = load(); const i = list.findIndex(t => t.id === task.id); if (i >= 0) list[i] = task; save(list);
-  console.log(`${task.error ? '✗' : task.state === 'waiting' ? '⏸' : '✓'} ${task.id} ${task.error ? 'failed' : task.state === 'waiting' ? 'waiting for your OK' : 'done'} (${task.result.length} chars${task.tools?.length ? ', tools: ' + task.tools.join(' ') : ''}${task.note ? ', note: ' + task.note : ''})`);
+  db.addTask(task);
+  manageDepartmentTraffic(task.dept);
+  pushEvent('task_update', { taskId: id, state: task.state, agent: task.agent, dept: task.dept, error: task.error });
+  console.log(`${task.error ? '✗' : task.state === 'waiting' ? '⏸' : '✓'} ${task.id} ${task.error ? 'failed' : task.state === 'waiting' ? 'waiting for your OK' : 'done'} (${String(task.result || '').length} chars${task.tools?.length ? ', tools: ' + task.tools.join(' ') : ''}${task.note ? ', note: ' + task.note : ''})`);
   return task;
 }
 
@@ -446,7 +645,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(url.pathname === '/dark' ? page.replace('<body>', '<body class="dark">') : page); // /dark: the same file, opened in dark mode
     }
     if (url.pathname === '/api/health') return json(res, 200, { ok: true, version, backend, provider: MODELS[cfg.model]?.provider || 'antigravity', model: cfg.model, modelName: modelName(cfg.model), models: MODEL_KEYS, effort: cfg.effort || '', efforts: EFFORT_KEYS, name: cfg.name, brain: BRAIN, notes: graph.notes, depts: DEPT_KEYS,
-      agents: agentsOut(), setup: setupMap(), routines: (l => ({ count: l.length, paused: l.filter(r => r.paused).length, depts: routines.ALLOWED }))(loadRoutines()), roster: { customised: roster.customised, briefed: roster.briefed, files: roster.files, problems: roster.problems }, skills: (({ count, shipped, brain, problems }) => ({ count, shipped, brain, problems }))(skills.summary()), tools: backend === 'claude-cli', mcp: mcp.summary() });
+      agents: agentsOut(), setup: setupMap(), routines: (l => ({ count: l.length, paused: l.filter(r => r.paused).length, depts: routines.ALLOWED }))(loadRoutines()), roster: { customised: roster.customised, briefed: roster.briefed, files: roster.files, problems: roster.problems }, skills: (({ count, shipped, brain, problems }) => ({ count, shipped, brain, problems }))(skills.summary()), tools: backend === 'claude-cli', mcp: mcp.summary(), db: db.getStats(), sseClients: sseClients.size });
     if (url.pathname === '/api/company' && req.method === 'POST') {
       const b = await body(req);
       if (b.name) cfg.name = String(b.name).trim();
@@ -559,15 +758,126 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, deleted: deptKey, depts: deptsMap, keys: DEPT_KEYS, agents: agentsOut() });
     }
 
+    /* ---- Agent CRUD: POST (create), PUT (update), DELETE ---- */
+    if (url.pathname === '/api/agents' && req.method === 'POST') {
+      const b = await body(req);
+      const dept = String(b.department || b.dept || '').trim();
+      if (!dept || !DEPTS[dept]) return json(res, 400, { error: 'Valid department required' });
+      const id = String(b.id || `agent_${dept}_${nid()}`).toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32);
+      if (AGENTS.some(a => a.id === id)) return json(res, 409, { error: `Agent id "${id}" already exists` });
+      // Compute a grid position based on current agent count in dept
+      const deptAgents = AGENTS.filter(a => a.department === dept);
+      const gridX = (deptAgents.length % 3) * 0.33 + 0.1;
+      const gridZ = Math.floor(deptAgents.length / 3) * 0.33 + 0.2;
+      const agent: any = {
+        id, department: dept, dept, lead: false, is_ceo: false,
+        name: String(b.name || id).toUpperCase().slice(0, 32),
+        role: String(b.role || '').slice(0, 80),
+        does: String(b.does || '').slice(0, 400),
+        tools: Array.isArray(b.tools) ? b.tools.map(String).slice(0, 12) : [],
+        brief: String(b.brief || '').slice(0, 2000),
+        model: normModel(b.model) || '',
+        effort: normEffort(b.effort) || '',
+        grid: [gridX, gridZ],
+        hair: b.hair || '#1f1f1f', skin: b.skin || '#F0C9A0'
+      };
+      AGENTS.push(agent);
+      db.addOrUpdateAgent(agent);
+      console.log(`+ agent ${agent.id} (${agent.name}) added to ${DEPTS[dept].name}`);
+      pushEvent('agent_added', { agentId: agent.id, dept });
+      return json(res, 200, { ok: true, agent: { ...agent }, agents: agentsOut() });
+    }
+
     const am = url.pathname.match(/^\/api\/agents\/([^/]+)$/);
+    if (am && req.method === 'PUT') {
+      const agentId = am[1];
+      const agentObj = AGENTS.find(a => a.id === agentId);
+      if (!agentObj) return json(res, 404, { error: 'Agent not found' });
+      const b = await body(req);
+      const EDITABLE = ['name', 'role', 'does', 'tools', 'brief', 'model', 'effort'];
+      for (const k of EDITABLE) {
+        if (b[k] === undefined) continue;
+        if (k === 'name') agentObj.name = String(b.name).trim().slice(0, 32).toUpperCase();
+        else if (k === 'tools') agentObj.tools = Array.isArray(b.tools) ? b.tools.map(String).slice(0, 12) : agentObj.tools;
+        else if (k === 'model') agentObj.model = normModel(b.model) || '';
+        else if (k === 'effort') agentObj.effort = normEffort(b.effort) || '';
+        else if (k === 'brief') agentObj.brief = String(b.brief || '').slice(0, 2000);
+        else (agentObj as any)[k] = String(b[k]).trim();
+      }
+      db.addOrUpdateAgent(agentObj);
+      console.log(`✎ agent ${agentId} updated`);
+      pushEvent('agent_updated', { agentId, dept: agentObj.department });
+      return json(res, 200, { ok: true, agent: agentObj, agents: agentsOut() });
+    }
     if (am && req.method === 'DELETE') {
       const agentId = am[1];
       const agentObj = AGENTS.find(a => a.id === agentId);
       if (!agentObj) return json(res, 404, { error: 'Agent not found' });
+      // Guard: cannot delete core leads
+      const CORE_LEADS = ['ceo', 'elead', 'lexi', 'mlead', 'olead', 'alead', 'dlead'];
+      if (CORE_LEADS.includes(agentId)) return json(res, 400, { error: 'Core leads cannot be deleted' });
+      // Guard: cannot delete a lead if it has sub-agents
+      if (agentObj.lead && AGENTS.filter(a => a.department === agentObj.department).length > 1) {
+        return json(res, 400, { error: 'Remove sub-agents from this department before deleting its lead' });
+      }
       db.deleteAgent(agentId);
       const aIdx = AGENTS.findIndex(a => a.id === agentId);
       if (aIdx >= 0) AGENTS.splice(aIdx, 1);
+      console.log(`- agent ${agentId} deleted`);
+      pushEvent('agent_removed', { agentId, dept: agentObj.department });
       return json(res, 200, { ok: true, deleted: agentId, agents: agentsOut() });
+    }
+
+    /* ---- Agent handoff / message ---- */
+    const hm = url.pathname.match(/^\/api\/agents\/([^/]+)\/message$/);
+    if (hm && req.method === 'POST') {
+      const fromId = hm[1];
+      const b = await body(req);
+      const toAgent = AGENTS.find(a => a.id === b.toAgent);
+      if (!toAgent) return json(res, 404, { error: 'Target agent not found' });
+      const task: any = {
+        id: nid(), dept: toAgent.department, agent: toAgent.id,
+        title: String(b.title || b.task || `Message from ${fromId}`).slice(0, 90),
+        text: String(b.task || b.text || '').trim(),
+        plan: [], eta: 20, why: `Delegated by ${fromId}`,
+        priority: b.priority || 'MEDIUM', state: 'next',
+        addedAt: Date.now(), by: fromId
+      };
+      db.addTask(task);
+      db.logAgentEvent('handoff', fromId, { toAgent: toAgent.id, taskId: task.id, payload: { task: task.text } });
+      pushEvent('agent_event', { eventType: 'handoff', fromAgent: fromId, toAgent: toAgent.id, taskId: task.id });
+      console.log(`✉ ${fromId} → ${toAgent.id}: ${task.title}`);
+      return json(res, 200, { ok: true, task });
+    }
+
+    /* ---- LangGraph execution graph endpoint ---- */
+    const gm = url.pathname.match(/^\/api\/graph\/([^/]+)$/);
+    if (gm && req.method === 'GET') {
+      const taskId = gm[1];
+      const state = db.getGraphState(taskId);
+      if (!state) return json(res, 404, { error: 'Graph state not found for task' });
+      return json(res, 200, state);
+    }
+
+    /* ---- SSE stream for real-time agent events ---- */
+    if (url.pathname === '/api/events' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'Access-Control-Allow-Origin': '*' });
+      res.write(': connected\n\n');
+      sseClients.add(res);
+      req.on('close', () => sseClients.delete(res));
+      return; // keep connection open
+    }
+
+    /* ---- DB stats endpoint ---- */
+    if (url.pathname === '/api/db/stats' && req.method === 'GET') {
+      return json(res, 200, { ok: true, stats: db.getStats(), sseClients: sseClients.size });
+    }
+
+    /* ---- Agent events log ---- */
+    if (url.pathname === '/api/agent-events' && req.method === 'GET') {
+      const limit = parseInt(url.searchParams.get('limit') || '50');
+      const taskId = url.searchParams.get('taskId') || undefined;
+      return json(res, 200, { ok: true, events: db.getAgentEvents(limit, taskId) });
     }
 
     if (url.pathname === '/api/mcp/config' && req.method === 'POST') {
@@ -632,15 +942,52 @@ const server = http.createServer(async (req, res) => {
       const { dept, text, model, effort, priority } = await body(req);
       if (!DEPTS[dept] || dept === 'brain') return json(res, 400, { error: 'unknown department' });
       if (!text || !String(text).trim()) return json(res, 400, { error: 'empty task' });
+
+      // CEO / exec department: use the orchestrator instead of single-agent route
+      if (dept === 'exec') {
+        const ceo = AGENTS.find(a => a.is_ceo || a.id === 'ceo') || AGENTS.find(a => a.department === 'exec')!;
+        const orchestratorTask: any = {
+          id: nid(), dept: 'exec', agent: ceo.id,
+          title: String(text).trim().slice(0, 90),
+          text: String(text).trim(), plan: [], eta: 120,
+          why: 'CEO cross-department orchestration',
+          priority: priority || 'HIGH', state: 'doing',
+          addedAt: Date.now(), startedAt: Date.now(), by: 'you',
+          model: normModel(model) || undefined, effort: normEffort(effort) || undefined
+        };
+        db.addTask(orchestratorTask);
+        pushEvent('task_start', { taskId: orchestratorTask.id, agent: ceo.id, dept: 'exec' });
+        console.log(`🎯 ${orchestratorTask.id} [CEO] orchestrating: ${orchestratorTask.title}`);
+        // Run orchestration async — client polls task state
+        enqueue(async () => {
+          try {
+            const result = await orchestrate(String(text).trim(), orchestratorTask.id, normModel(model) || undefined);
+            Object.assign(orchestratorTask, { state: 'done', doneAt: Date.now(), result, error: false });
+            db.addTask(orchestratorTask);
+            writeNote(orchestratorTask);
+            await rebuildGraph();
+          } catch (e: any) {
+            Object.assign(orchestratorTask, { state: 'done', doneAt: Date.now(), result: `Orchestration failed: ${e.message}`, error: true });
+            db.addTask(orchestratorTask);
+          }
+          pushEvent('task_update', { taskId: orchestratorTask.id, state: orchestratorTask.state, agent: ceo.id, dept: 'exec' });
+        }).catch(e => console.warn('orchestrate:', e.message));
+        return json(res, 200, orchestratorTask);
+      }
+
+      // Standard single-department routing
       const r = await route(dept, String(text).trim());
       const task = { id: nid(), dept, agent: r.agent, title: r.title, text: String(text).trim(), plan: r.plan, eta: r.eta, why: r.why, priority: priority || 'MEDIUM', state: 'next', addedAt: Date.now(), by: 'you', model: normModel(model) || undefined, effort: normEffort(effort) || undefined };
-      const list = load(); list.push(task); save(list);
+      db.addTask(task);
       console.log(`+ ${task.id} [${task.priority}] → ${task.agent}: ${task.title}`);
       return json(res, 200, task);
     }
-    const m = url.pathname.match(/^\/api\/tasks\/([^/]+)(?:\/(run|revise|approve|reject))?$/);
-    if (m && req.method === 'POST' && (m[2] === 'approve' || m[2] === 'reject')) { // D1: the owner's tick on a routine's draft
-      const task = load().find(t => t.id === m[1]);
+    const m = url.pathname.match(/^\/api\/tasks\/([^/]+)(?:\/(run|revise|approve|reject|children))?$/);
+    if (m && req.method === 'GET' && m[2] === 'children') {
+      return json(res, 200, { ok: true, children: db.getChildTasks(m[1]) });
+    }
+    if (m && req.method === 'POST' && (m[2] === 'approve' || m[2] === 'reject')) {
+      const task = db.getTaskById(m[1]);
       if (!task) return json(res, 404, { error: 'no such task' });
       if (task.state !== 'waiting') return json(res, 400, { error: 'this task is not waiting for your OK' });
       const { feedback } = m[2] === 'reject' ? await body(req) : {};
@@ -652,29 +999,33 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, id: task.id, state: 'doing' });
     }
     if (m && req.method === 'POST' && (m[2] === 'run' || m[2] === 'revise')) {
-      const list = load(); const task = list.find(t => t.id === m[1]);
+      const task = db.getTaskById(m[1]);
       if (!task) return json(res, 404, { error: 'no such task' });
       const { feedback } = m[2] === 'revise' ? await body(req) : {};
-      task.state = 'doing'; task.startedAt = Date.now(); save(list);
+      task.state = 'doing'; task.startedAt = Date.now();
+      db.updateTask(task.id, { state: 'doing', startedAt: task.startedAt });
+      pushEvent('task_start', { taskId: task.id, agent: task.agent, dept: task.dept });
       try {
         const { result, read, tools, used, skills: sk, modelUsed, modelFrom, modelId: ran, effortUsed, effortFrom } = await run(task, feedback);
         Object.assign(task, { state: 'done', doneAt: Date.now(), result, read, tools, used, skills: sk, error: false, modelUsed, modelFrom, modelId: ran, effortUsed, effortFrom });
         task.note = writeNote(task);
         await rebuildGraph();
+        saveTaskAsMemory(task, task.agent, task.dept);
       } catch (e: any) {
         Object.assign(task, { state: 'done', doneAt: Date.now(), result: 'Could not complete this task: ' + e.message, error: true });
       }
-      const l2 = load(); const i = l2.findIndex(t => t.id === task.id); if (i >= 0) l2[i] = task; save(l2);
-      console.log(`${task.error ? '✗' : '✓'} ${task.id} ${task.error ? 'failed' : 'done'} (${task.result.length} chars${task.tools?.length ? ', tools: ' + task.tools.join(' ') : ''}${task.note ? ', note: ' + task.note : ''})`);
+      db.addTask(task);
+      pushEvent('task_update', { taskId: task.id, state: task.state, agent: task.agent, dept: task.dept, error: task.error });
+      console.log(`${task.error ? '✗' : '✓'} ${task.id} ${task.error ? 'failed' : 'done'} (${String(task.result || '').length} chars${task.tools?.length ? ', tools: ' + task.tools.join(' ') : ''}${task.note ? ', note: ' + task.note : ''})`);
       json(res, 200, task);
-      if (feedback && !task.error) { // learn from the correction, after the reply is out the door
+      if (feedback && !task.error) {
         const a = AGENTS.find(x => x.id === task.agent);
         learn.classify(ask, a, task, feedback).then(v => { const r = learn.record(BRAIN, a, task, feedback, v); console.log(`  ↳ ${a.name} ${r.standing ? 'learned a rule' : 'noted a one-off'}: ${r.line.slice(0, 100)}`); })
           .catch(e => console.warn('learn:', e.message));
       }
       return;
     }
-    if (m && req.method === 'DELETE') { save(load().filter(t => t.id !== m[1])); return json(res, 200, { ok: true }); }
+    if (m && req.method === 'DELETE') { db.deleteTask(m[1]); return json(res, 200, { ok: true }); }
     if (url.pathname === '/api/chat' && req.method === 'POST') {
       const { agent, text, history } = await body(req);
       if (!text || !String(text).trim()) return json(res, 400, { error: 'empty message' });

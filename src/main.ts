@@ -559,7 +559,7 @@ function worldAt(nx, ny) {
 let focused = null; // dept key when zoomed into a dept
 
 addEventListener('wheel', (e) => {
-  if (e.target.closest && e.target.closest('#rail')) return; // let the rail scroll
+  if (e.target && e.target.closest && e.target.closest('#rail, #deptModal, .tb-box, .tp-big, .tp-box, textarea, select, input')) return;
   e.preventDefault();
   tween = null;
   view.arc = 0;
@@ -1532,6 +1532,7 @@ function initDeptManager() {
   const form = document.getElementById('newDeptForm');
 
   if (!btn || !modal) return;
+  modal.addEventListener('wheel', (e) => { e.stopPropagation(); }, { passive: true });
 
   function renderDepts(deptsData) {
     if (!container) return;
@@ -1539,7 +1540,7 @@ function initDeptManager() {
     const keys = deptsData.keys || DEPT_KEYS;
     container.innerHTML = keys.map(k => {
       const d = depts[k] || { name: k.toUpperCase(), chip: '#8FD3F4', ink: '#2E86AB', model: '' };
-      const isCustom = !['emails', 'sales', 'marketing', 'ops', 'fin', 'delivery', 'brain'].includes(k);
+      const isCustom = !['exec', 'executive', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale', 'brain'].includes(k);
       return `
         <div class="dept-card">
           <div style="display: flex; align-items: center; justify-content: space-between;">

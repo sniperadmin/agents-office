@@ -5,6 +5,7 @@ import { ROOT, loadConfig } from './config.ts';
 import { AGENTS, DEPTS } from './src/data.ts';
 import { V1 } from './src/v1data.ts';
 import { MODEL_KEYS, normModel } from './src/models.ts';
+import { db } from './db.ts';
 
 export const FILE = path.join(ROOT, 'office.agents.json');
 export const LOCAL = path.join(ROOT, 'office.agents.local.json');
@@ -14,7 +15,7 @@ const BRIEF_MAX = 2000;
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 export function defaults() {
-  return AGENTS.map(a => { const p = V1.find(x => x.id === a.id) || {}; return { id: a.id, department: a.dept || a.department, lead: !!a.lead, name: a.name, role: a.role || p.role || '', does: a.does || p.tagline || '', tools: (a.tools || []) as string[], brief: a.brief || '', model: a.model || '', effort: a.effort || '' }; });
+  return AGENTS.map(a => { const p = V1.find(x => x.id === a.id) || {}; return { id: a.id, department: a.dept || a.department, lead: !!a.lead, name: a.name, role: a.role || p.role || `${a.name} Specialist`, does: a.does || p.tagline || `Drives ${a.name.toLowerCase()} strategy, execution, and deliverables for the department.`, tools: (a.tools || []) as string[], brief: a.brief || '', model: a.model || '', effort: a.effort || '' }; });
 }
 
 export function validate(doc: any, base = defaults()) {
@@ -68,6 +69,46 @@ function read(p: string): any { if (!fs.existsSync(p)) return null; try { return
 
 export function loadRoster(brainPath = loadConfig().brainPath) {
   let agents = defaults(); const problems: string[] = [];
+
+  // DB-first: sync Heuresis roster defaults into SQLite DB
+  try {
+    const defs = defaults();
+    db.syncHeuresisRoster(defs as any);
+    const dbAgents = db.getAgents();
+    if (dbAgents.length > 0) {
+      const out = defs.map(a => ({ ...a }));
+      for (const da of dbAgents) {
+        const idx = out.findIndex(x => x.id === da.id);
+        if (idx >= 0) {
+          Object.assign(out[idx], { name: da.name, role: da.role, does: da.does, tools: da.tools, brief: da.brief, model: da.model || '', effort: da.effort || '' });
+        } else {
+          out.push({ id: da.id, department: da.department, lead: da.lead, name: da.name, role: da.role, does: da.does, tools: da.tools, brief: da.brief || '', model: da.model || '', effort: da.effort || '' } as any);
+        }
+      }
+      const defaultIds = new Set(defs.map(a => a.id));
+      const dbIds = new Set(dbAgents.map(a => a.id));
+      const filtered = out.filter(a => defaultIds.has(a.id) || dbIds.has(a.id));
+      const bf = brainFile(brainPath);
+      if (fs.existsSync(bf)) {
+        const bdoc = read(bf);
+        const list = Array.isArray(bdoc) ? bdoc : Array.isArray(bdoc?.agents) ? bdoc.agents : null;
+        if (list) {
+          for (const ba of list) {
+            const target = filtered.find(x => x.id === ba.id);
+            if (target && ba.brief !== undefined) {
+              target.brief = ba.brief;
+            }
+          }
+        }
+      }
+      const customised = filtered.filter((a, i) => { const d = defs[i]; return !d || a.name !== d.name || a.role !== d.role || a.does !== d.does || a.brief; }).length;
+      return { agents: filtered, problems, customised, briefed: filtered.filter(a => a.brief).length, files: ['office.db (live)'] };
+    }
+  } catch (e: any) {
+    problems.push(`db: could not read agents (${e.message}) — loading from files`);
+  }
+
+  // Fallback: read from JSON files (first boot / empty DB)
   const sources = [FILE, brainFile(brainPath), LOCAL];
   const label = (p: string) => p === FILE || p === LOCAL ? path.basename(p) : 'brain/Agents Office/agents.json';
   for (const p of sources) {
@@ -75,6 +116,8 @@ export function loadRoster(brainPath = loadConfig().brainPath) {
     const rel = label(p);
     if (doc.__error) { problems.push(`${rel}: not valid JSON (${doc.__error.split('\n')[0]}) — ignored`); continue; }
     const r = validate(doc, agents); agents = r.agents; problems.push(...r.problems.map(x => `${rel}: ${x}`));
+    // Seed the DB so future boots use DB-first path
+    try { for (const a of agents) db.addOrUpdateAgent(a as any); } catch {}
   }
   const customised = agents.filter((a, i) => { const d = defaults()[i]; return !d || a.name !== d.name || a.role !== d.role || a.does !== d.does || a.brief; }).length;
   return { agents, problems, customised, briefed: agents.filter(a => a.brief).length, files: sources.filter(p => fs.existsSync(p)).map(label) };

@@ -7,100 +7,14 @@
       "lead": true,
       "is_ceo": true,
       "name": "CHIEF EXECUTIVE OFFICER",
-      "role": "CEO / Managing Director",
-      "does": "Communicates with all department leads in parallel, drives strategic vision, sets priorities, and monitors company performance across all teams.",
+      "role": "CEO & Pipeline Orchestrator",
+      "does": "Drives overall strategic vision, orchestrates cross-department workflows, directs leads, and synthesizes executive deliverables.",
       "tools": [
         "notion",
         "gmail",
         "web"
       ],
-      "brief": ""
-    },
-    {
-      "id": "elead",
-      "department": "emails",
-      "lead": true,
-      "is_ceo": false,
-      "name": "EMAILS LEAD",
-      "role": "Inbox Lead",
-      "does": "Runs the whole inbox: routes every email to the right desk, checks tone, and escalates only what needs the owner.",
-      "tools": [
-        "gmail",
-        "notion"
-      ],
-      "brief": ""
-    },
-    {
-      "id": "lexi",
-      "department": "sales",
-      "lead": true,
-      "is_ceo": false,
-      "name": "SALES LEAD",
-      "role": "Sales Team Lead Agent",
-      "does": "Runs the sales team and owns revenue generation, pipeline review, and deal qualification.",
-      "tools": [
-        "notion",
-        "gmail"
-      ],
-      "brief": ""
-    },
-    {
-      "id": "mlead",
-      "department": "marketing",
-      "lead": true,
-      "is_ceo": false,
-      "name": "MARKETING LEAD",
-      "role": "Marketing Lead",
-      "does": "Runs the marketing engine, content calendar, brand positioning, and campaign strategy.",
-      "tools": [
-        "meta",
-        "clarity",
-        "notion"
-      ],
-      "brief": ""
-    },
-    {
-      "id": "olead",
-      "department": "ops",
-      "lead": true,
-      "is_ceo": false,
-      "name": "OPERATIONS LEAD",
-      "role": "Operations Lead",
-      "does": "Runs operations, legal review, compliance checks, company reporting, and internal workflows.",
-      "tools": [
-        "notion",
-        "gmail",
-        "pandadoc"
-      ],
-      "brief": ""
-    },
-    {
-      "id": "alead",
-      "department": "fin",
-      "lead": true,
-      "is_ceo": false,
-      "name": "ACCOUNTING LEAD",
-      "role": "Accounting Lead Agent",
-      "does": "Runs the accounting team, cash flow forecasting, invoicing, payables, and financial reconciliation.",
-      "tools": [
-        "xero",
-        "gmail"
-      ],
-      "brief": ""
-    },
-    {
-      "id": "dlead",
-      "department": "delivery",
-      "lead": true,
-      "is_ceo": false,
-      "name": "DELIVERY LEAD",
-      "role": "Delivery Lead",
-      "does": "Owns every live project end-to-end: timelines, quality assurance, client reporting, and project handovers.",
-      "tools": [
-        "notion",
-        "gmail"
-      ],
-      "brief": ""
+      "brief": "Acts as both Chief Executive Officer and Orchestrator. Directs department leads and manages the full end-to-end execution pipeline."
     }
   ]
 }

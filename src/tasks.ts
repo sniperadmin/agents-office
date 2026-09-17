@@ -131,9 +131,9 @@ export function initTasks(ctx) {
   let seq = 1;
   // V3.5 routines. Live: the server's list (polled). Demo: session-only, fired by this tick.
   const routines = []; let rseq = 1, polling = false, railAgent = null, railExp = false;
-  const RT_DEPTS = ['emails', 'fin', 'sales'];
-  const RT_NAMES = { emails: 'Emails', fin: 'Accounting', sales: 'Sales', marketing: 'Marketing', ops: 'Operations', delivery: 'Delivery' };
-  const rtRefuse = k => `Routines come to ${RT_NAMES[k] || k} in a later release. This release: Emails, Accounting and Sales.`;
+  const RT_DEPTS = DEPT_KEYS;
+  const RT_NAMES = Object.fromEntries(DEPT_KEYS.map(k => [k, DEPTS[k]?.name || k]));
+  const rtRefuse = k => ``;
   const deptRoutines = k => routines.filter(r => r.dept === k);
   const agentRoutines = id => routines.filter(r => r.agent === id);
   const nextOf = list => list.filter(r => !r.paused && r.nextAt).sort((a, b) => a.nextAt - b.nextAt)[0];
@@ -379,7 +379,7 @@ export function initTasks(ctx) {
   }
 
   async function disbandDepartment(deptKey: string) {
-    const CORE_DEPTS = ['exec', 'emails', 'sales', 'marketing', 'ops', 'fin', 'delivery', 'brain'];
+    const CORE_DEPTS = ['exec', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale', 'brain'];
     if (CORE_DEPTS.includes(deptKey)) return false;
     try {
       const res = await fetch(`${API}/departments/${deptKey}`, { method: 'DELETE' });
