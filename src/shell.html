@@ -1086,7 +1086,55 @@
     </div>
   </div>
 </div>
+<!-- MCP Manager Modal -->
+<div id="mcpModal" class="tp-big">
+  <div class="tb-box" style="width: min(820px, 94vw); max-height: min(720px, 90vh); overflow-y: auto;">
+    <div class="tb-head">
+      <span class="dot" style="background:#5ADEB7"></span>
+      <span style="font-family: var(--serif); font-size: 18px;">MCP CONNECTORS & TOOLS</span>
+      <span class="sp"></span>
+      <button id="addMcpBtn" class="tag" style="cursor:pointer; font-weight:700; background:#5ADEB7; color:#000; padding: 4px 10px; border-radius: 4px; pointer-events:auto; margin-right: 8px;">+ ADD MCP SERVER</button>
+      <button id="mcpModalClose" class="tb-close" title="Close (Esc)">✕</button>
+    </div>
+    
+    <div style="font-size: 11px; color: var(--grey); margin-bottom: 12px;">
+      Manage tool connectors, server status, department bindings, and custom MCP integrations across the office.
+    </div>
+
+    <div id="mcpFormContainer" style="display:none; padding: 14px; background: rgba(255,255,255,0.04); border: 1px solid var(--hairline); border-radius: 8px; margin-bottom: 16px;">
+      <h4 id="mcpFormTitle" style="font-family: var(--serif); font-size: 16px; margin: 0 0 10px 0; font-weight: 500;">Add Custom MCP Server</h4>
+      <form id="mcpForm" style="display: flex; flex-direction: column; gap: 10px;">
+        <input type="hidden" id="mcpFormId">
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
+          <div>
+            <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Server Name</label>
+            <input type="text" id="mcpFormName" class="dept-input" placeholder="e.g. Jina AI Search" required>
+          </div>
+          <div>
+            <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Key / Slug</label>
+            <input type="text" id="mcpFormKey" class="dept-input" placeholder="e.g. jina" required>
+          </div>
+        </div>
+        <div>
+          <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Command or URL</label>
+          <input type="text" id="mcpFormCommand" class="dept-input" placeholder="e.g. npx -y @jina/mcp-server or https://api.example.com/mcp" required>
+        </div>
+        <div>
+          <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Assigned Departments</label>
+          <div id="mcpFormDepts" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;"></div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
+          <button type="button" id="mcpFormCancel" class="dept-input" style="width: auto; padding: 6px 14px; cursor: pointer;">Cancel</button>
+          <button type="submit" class="dept-submit" style="width: auto; padding: 6px 18px;">Save Server</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="mcpListContainer" style="display: flex; flex-direction: column; gap: 10px;">
+      <!-- Populated dynamically -->
+    </div>
+  </div>
+</div>
 <!--APP-->
 </body>
-</html>
 

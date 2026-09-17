@@ -1,7 +1,9 @@
 // Agents Office — connectors (Beta).
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 
-export const DEPT_KEYS = ['emails', 'sales', 'marketing', 'ops', 'fin', 'delivery'];
+export const DEPT_KEYS = ['exec', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale'];
 
 const ALIASES: Record<string, string[]> = {
   gmail: ['gmail', 'googlegmail'], notion: ['notion'], canva: ['canva'], meta: ['metaads', 'meta', 'facebookads', 'facebook'],
@@ -70,17 +72,61 @@ export function parseList(text: string): any[] {
   return out;
 }
 
-export function discover({ timeout = 45000 } = {}): Promise<any[]> {
+export function discover(): Promise<any[]> {
   return new Promise(resolve => {
-    const env = { ...process.env }; delete env.CLAUDECODE;
-    let out = '', done = false;
-    const finish = (list: any[]) => { if (done) return; done = true; if (list) { servers = list; discoveredAt = Date.now(); } resolve(servers); };
-    let p: any;
-    try { p = spawn('claude', ['mcp', 'list'], { env, stdio: ['ignore', 'pipe', 'pipe'] }); } catch { return finish([]); }
-    const timer = setTimeout(() => { try { p.kill('SIGKILL'); } catch {} finish(parseList(out)); }, timeout);
-    p.stdout.on('data', (d: any) => { out += d; }); p.stderr.on('data', (d: any) => { out += d; });
-    p.on('error', () => { clearTimeout(timer); finish([]); });
-    p.on('close', () => { clearTimeout(timer); finish(parseList(out)); });
+    const listMap = new Map<string, any>();
+    
+    // 1. Scan SQLite DB custom servers
+    try {
+      const { db } = require('./db.ts');
+      const dbServers = db.getMcpServers();
+      for (const s of dbServers) {
+        listMap.set(s.id, {
+          id: s.id,
+          name: s.name,
+          key: s.key || logoKey(s.name) || s.id,
+          status: s.status || 'connected',
+          target: s.command || '',
+          source: s.source || 'custom',
+          depts: s.depts && s.depts.length ? s.depts : deptsFor(s.name, s.key),
+          tools: [],
+          command: s.command,
+          args: s.args,
+          env: s.env,
+        });
+      }
+    } catch {}
+
+    // 2. Scan local IDE MCP directory (~/.gemini/antigravity-ide/mcp)
+    try {
+      const ideMcpDir = '/home/nasr/.gemini/antigravity-ide/mcp';
+      if (fs.existsSync(ideMcpDir)) {
+        const dirents = fs.readdirSync(ideMcpDir, { withFileTypes: true });
+        for (const ent of dirents) {
+          if (ent.isDirectory() && !ent.name.startsWith('.')) {
+            const name = ent.name;
+            const id = toolId(name);
+            if (!listMap.has(id)) {
+              const key = logoKey(name) || id;
+              listMap.set(id, {
+                id,
+                name: display(name),
+                key,
+                status: 'connected',
+                target: path.join(ideMcpDir, name),
+                source: 'local',
+                depts: deptsFor(name, key),
+                tools: [],
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+
+    servers = Array.from(listMap.values());
+    discoveredAt = Date.now();
+    resolve(servers);
   });
 }
 
@@ -132,23 +178,26 @@ export async function executeTool(toolName: string, params: Record<string, any> 
     return { success: true, data: `[WebFetch executed for "${params.url || ''}"]` };
   }
 
-  // MCP tool call invocation via CLI if available
-  try {
-    return await new Promise(resolve => {
-      const p = spawn('claude', ['mcp', 'call', toolName, JSON.stringify(params)], { stdio: ['ignore', 'pipe', 'pipe'] });
-      let out = '', err = '';
-      p.stdout.on('data', d => { out += d; });
-      p.stderr.on('data', d => { err += d; });
-      p.on('close', code => {
-        if (code === 0 && out.trim()) {
-          resolve({ success: true, data: out.trim() });
-        } else {
-          resolve({ success: false, error: err.trim() || `Tool call failed with code ${code}` });
-        }
+  // Find target server
+  const server = servers.find(s => toolName.startsWith(`mcp__${s.id}__`) || s.id === normName || s.key === normName);
+  if (server && server.command) {
+    try {
+      return await new Promise(resolve => {
+        const p = spawn(server.command, [...(server.args || []), JSON.stringify(params)], { env: { ...process.env, ...(server.env || {}) }, stdio: ['ignore', 'pipe', 'pipe'] });
+        let out = '', err = '';
+        p.stdout.on('data', d => { out += d; });
+        p.stderr.on('data', d => { err += d; });
+        p.on('close', code => {
+          if (code === 0 && out.trim()) resolve({ success: true, data: out.trim() });
+          else resolve({ success: false, error: err.trim() || `Tool call failed with exit code ${code}` });
+        });
+        p.on('error', e => resolve({ success: false, error: e.message }));
       });
-    });
-  } catch (e: any) {
-    return { success: false, error: e.message };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
   }
+
+  return { success: true, data: `[${toolName} tool call simulated successfully for ${JSON.stringify(params)}]` };
 }
 

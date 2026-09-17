@@ -884,8 +884,42 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req);
       cfg.mcp = cfg.mcp || { allow: [], deny: [], departments: {} };
       if (b.departments) cfg.mcp.departments = { ...cfg.mcp.departments, ...b.departments };
+      if (Array.isArray(b.allow)) cfg.mcp.allow = b.allow;
+      if (Array.isArray(b.deny)) cfg.mcp.deny = b.deny;
       db.saveConfig(cfg);
-      return json(res, 200, { ok: true, mcp: cfg.mcp });
+      mcp.configure(cfg);
+      await mcp.discover();
+      return json(res, 200, { ok: true, mcp: cfg.mcp, summary: mcp.summary() });
+    }
+
+    if (url.pathname === '/api/mcp/servers' && req.method === 'POST') {
+      const b = await body(req);
+      if (!b.name) return json(res, 400, { error: 'Server name is required' });
+      const id = String(b.id || b.key || b.name).toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
+      const rec = {
+        id,
+        name: String(b.name).trim(),
+        key: String(b.key || id).toLowerCase().trim(),
+        command: String(b.command || '').trim(),
+        args: Array.isArray(b.args) ? b.args : [],
+        env: typeof b.env === 'object' ? b.env : {},
+        depts: Array.isArray(b.depts) ? b.depts : [],
+        status: b.status || 'connected',
+        source: 'custom',
+        allowed: b.allowed !== false,
+      };
+      db.saveMcpServer(rec);
+      await mcp.discover();
+      return json(res, 200, { ok: true, server: rec, summary: mcp.summary() });
+    }
+
+    if (url.pathname === '/api/mcp/servers' && req.method === 'DELETE') {
+      const b = req.method === 'DELETE' ? (await body(req).catch(() => ({}))) : {};
+      const id = url.searchParams.get('id') || b.id;
+      if (!id) return json(res, 400, { error: 'Server id is required' });
+      db.deleteMcpServer(id);
+      await mcp.discover();
+      return json(res, 200, { ok: true, deleted: id, summary: mcp.summary() });
     }
 
     if (url.pathname === '/api/agent-status') {

@@ -72,6 +72,19 @@ export interface MemoryRecord {
   updatedAt: number;
 }
 
+export interface McpServerRecord {
+  id: string;
+  name: string;
+  key: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  depts: string[];
+  status: string;
+  source: string;
+  allowed: boolean;
+}
+
 export class Database {
   private db: DatabaseSync;
 
@@ -166,6 +179,19 @@ export class Database {
       CREATE TABLE IF NOT EXISTS config (
         key TEXT PRIMARY KEY,
         val TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS mcp_servers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        key TEXT NOT NULL,
+        command TEXT NOT NULL DEFAULT '',
+        args TEXT NOT NULL DEFAULT '[]',
+        env TEXT NOT NULL DEFAULT '{}',
+        depts TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'connected',
+        source TEXT NOT NULL DEFAULT 'custom',
+        allowed INTEGER NOT NULL DEFAULT 1
       );
 
       CREATE TABLE IF NOT EXISTS task_graph (
@@ -733,6 +759,44 @@ export class Database {
       history: JSON.parse(row.history || '[]'),
       updatedAt: row.updated_at
     };
+  }
+
+  public getMcpServers(): McpServerRecord[] {
+    const rows = this.db.prepare('SELECT * FROM mcp_servers').all() as any[];
+    return rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      key: r.key,
+      command: r.command,
+      args: JSON.parse(r.args || '[]'),
+      env: JSON.parse(r.env || '{}'),
+      depts: JSON.parse(r.depts || '[]'),
+      status: r.status,
+      source: r.source,
+      allowed: !!r.allowed,
+    }));
+  }
+
+  public saveMcpServer(s: McpServerRecord): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO mcp_servers (id, name, key, command, args, env, depts, status, source, allowed)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        key = excluded.key,
+        command = excluded.command,
+        args = excluded.args,
+        env = excluded.env,
+        depts = excluded.depts,
+        status = excluded.status,
+        source = excluded.source,
+        allowed = excluded.allowed
+    `);
+    stmt.run(s.id, s.name, s.key || s.id, s.command || '', JSON.stringify(s.args || []), JSON.stringify(s.env || {}), JSON.stringify(s.depts || []), s.status || 'connected', s.source || 'custom', s.allowed ? 1 : 0);
+  }
+
+  public deleteMcpServer(id: string): void {
+    this.db.prepare('DELETE FROM mcp_servers WHERE id = ?').run(id);
   }
 }
 
