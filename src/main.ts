@@ -1785,28 +1785,28 @@ function initDeptManager() {
       reserveContainer.innerHTML = RESERVE_TEMPLATES.map(t => {
         const isActive = keys.includes(t.key);
         return `
-          <div style="border: 1px solid var(--hairline); border-radius: 14px; padding: 12px 14px; background: ${isActive ? 'rgba(30,144,112,0.04)' : '#fff'}; display: flex; flex-direction: column; justify-content: space-between; gap: 8px;">
+          <div class="reserve-card ${isActive ? 'active' : ''}">
             <div>
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <span style="width: 10px; height: 10px; border-radius: 50%; background: ${t.chip}; inline-block;"></span>
+                  <span style="width: 10px; height: 10px; border-radius: 50%; background: ${t.chip}; display: inline-block;"></span>
                   <span style="font-weight: 700; font-size: 12px; letter-spacing: 0.05em; color: var(--ink);">${t.name}</span>
                 </div>
                 ${isActive 
-                  ? `<span style="font-size: 9px; font-weight: 700; color: #1E9070; background: rgba(30,144,112,0.15); padding: 2px 6px; border-radius: 4px;">✓ ACTIVE</span>`
-                  : `<span style="font-size: 9px; font-weight: 600; color: var(--grey); background: rgba(0,0,0,0.05); padding: 2px 6px; border-radius: 4px;">RESERVE</span>`
+                  ? `<span class="reserve-status-badge active">✓ ACTIVE</span>`
+                  : `<span class="reserve-status-badge">RESERVE</span>`
                 }
               </div>
               <div style="font-size: 10.5px; color: var(--grey); line-height: 1.3; margin-bottom: 6px;">${t.desc}</div>
               <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;">
-                <span style="font-size: 8.5px; font-weight: 700; color: #3B82F6; background: rgba(59,130,246,0.08); padding: 1px 5px; border-radius: 3px;">${t.skills}</span>
-                ${t.roles.map(r => `<span style="font-size: 8.5px; color: var(--grey); background: rgba(0,0,0,0.03); padding: 1px 5px; border-radius: 3px;">${r}</span>`).join('')}
+                <span class="reserve-skill-tag">${t.skills}</span>
+                ${t.roles.map(r => `<span class="reserve-role-pill">${r}</span>`).join('')}
               </div>
             </div>
             <div>
               ${isActive 
-                ? `<button data-disband="${t.key}" class="dept-disband-btn" style="width: 100%; padding: 6px 12px; background: rgba(196,96,96,0.08); color: #C46060; border: 1px solid rgba(196,96,96,0.3); border-radius: 8px; font-size: 10px; font-weight: 700; cursor: pointer;">DEACTIVATE / STAND DOWN</button>`
-                : `<button data-activate-key="${t.key}" class="reserve-activate-btn" style="width: 100%; padding: 7px 12px; background: var(--ink); color: var(--cream); border: none; border-radius: 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; cursor: pointer; transition: background .2s;">⚡ ACTIVATE TEAM (1-CLICK)</button>`
+                ? `<button data-disband="${t.key}" class="dept-disband-btn" style="width: 100%; padding: 6px 12px; border-radius: 8px; font-size: 10px; font-weight: 700; cursor: pointer;">DEACTIVATE / STAND DOWN</button>`
+                : `<button data-activate-key="${t.key}" class="reserve-activate-btn">⚡ ACTIVATE TEAM (1-CLICK)</button>`
               }
             </div>
           </div>

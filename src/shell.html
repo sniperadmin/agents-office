@@ -920,6 +920,111 @@
     color: #15161A;
   }
 
+  /* Reserve Team Cards */
+  .reserve-card {
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    padding: 12px 14px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 8px;
+    transition: background 0.3s var(--ease), border-color 0.3s var(--ease);
+  }
+  .reserve-card.active {
+    background: rgba(30,144,112,0.04);
+  }
+  .reserve-status-badge {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--grey);
+    background: rgba(0,0,0,0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .reserve-status-badge.active {
+    font-size: 9px;
+    font-weight: 700;
+    color: #1E9070;
+    background: rgba(30,144,112,0.15);
+  }
+  .reserve-skill-tag {
+    font-size: 8.5px;
+    font-weight: 700;
+    color: #3B82F6;
+    background: rgba(59,130,246,0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .reserve-role-pill {
+    font-size: 8.5px;
+    color: var(--grey);
+    background: rgba(0,0,0,0.03);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .reserve-activate-btn {
+    width: 100%;
+    padding: 7px 12px;
+    background: #15161A;
+    color: #ECEAE3;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.2s var(--ease);
+  }
+  .reserve-activate-btn:hover {
+    background: #2563EB;
+    color: #FFF;
+  }
+
+  /* Dark Mode for Reserve Cards - Matches Active Dept Cards & Dark Theme */
+  body.dark .reserve-card {
+    background: #141518;
+    border-color: var(--hairline);
+  }
+  body.dark .reserve-card.active {
+    background: rgba(30,144,112,0.12);
+    border-color: rgba(30,144,112,0.3);
+  }
+  body.dark .reserve-status-badge {
+    color: rgba(236,234,227,0.6);
+    background: rgba(255,255,255,0.08);
+  }
+  body.dark .reserve-status-badge.active {
+    color: #34D399;
+    background: rgba(52,211,153,0.18);
+  }
+  body.dark .reserve-skill-tag {
+    color: #60A5FA;
+    background: rgba(96,165,250,0.16);
+  }
+  body.dark .reserve-role-pill {
+    color: rgba(236,234,227,0.7);
+    background: rgba(255,255,255,0.06);
+  }
+  body.dark .reserve-activate-btn {
+    background: #22252B;
+    color: #ECEAE3;
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  body.dark .reserve-activate-btn:hover {
+    background: #3B82F6;
+    color: #FFFFFF;
+    border-color: #3B82F6;
+    box-shadow: 0 0 12px rgba(59,130,246,0.4);
+  }
+  body.dark .dept-disband-btn {
+    background: rgba(248,113,113,0.12) !important;
+    color: #F87171 !important;
+    border-color: rgba(248,113,113,0.35) !important;
+  }
+
+
   /* dept floor titles — screen-space, always horizontal (camera-readability rule) */
   .floorlabel {
     position: absolute; left: 0; top: 0;
