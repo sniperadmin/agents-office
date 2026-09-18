@@ -9,3 +9,9 @@ brain/Agents Office/
 *.backup-*
 # Added by code-review-graph
 .code-review-graph/
+
+.codebuddy/
+.cursor/
+.gemini/
+.kiro/
+.qoder/

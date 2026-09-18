@@ -193,8 +193,8 @@ export function initDeptManagerDomain(options: DeptManagerOptions) {
 
   function renderDepts(deptsData: any) {
     if (!container) return;
-    const depts = deptsData.depts || {};
-    const keys = deptsData.keys || DEPT_KEYS;
+    const depts = deptsData.depts || deptsData.departments || {};
+    const keys = deptsData.keys || deptsData.coreDepts || DEPT_KEYS;
 
     // Render Active Departments
     container.innerHTML = keys.map((k: string) => {

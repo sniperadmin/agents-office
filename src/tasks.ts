@@ -258,7 +258,11 @@ export function initTasks(ctx) {
       <span>NEXT<b data-tk="${k}-next">${deptTasks(k, 'next').length}</b></span>
       <span>DONE<b data-tk="${k}-done">${doneCount[k]}</b></span></div>`;
   }
-  for (const k of DEPT_KEYS) deptRT[k].apprRow.insertAdjacentHTML('beforebegin', rowHTML(k));
+  for (const k of DEPT_KEYS) {
+    if (deptRT[k] && deptRT[k].apprRow) {
+      deptRT[k].apprRow.insertAdjacentHTML('beforebegin', rowHTML(k));
+    }
+  }
   function syncBadges() {
     for (const k of DEPT_KEYS) {
       const vals = { doing: deptTasks(k, 'doing').length, next: deptTasks(k, 'next').length, done: doneCount[k] };
@@ -335,8 +339,8 @@ export function initTasks(ctx) {
 
   function syncDepartments(deptsData: any) {
     if (!deptsData) return;
-    const depts = deptsData.depts || {};
-    const keys = deptsData.keys || [];
+    const depts = deptsData.depts || deptsData.departments || {};
+    const keys = deptsData.keys || deptsData.coreDepts || [];
     for (const k of keys) {
       if (!DEPT_KEYS.includes(k)) DEPT_KEYS.push(k);
       if (depts[k]) {

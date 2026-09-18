@@ -597,7 +597,7 @@ const server = http.createServer(async (req, res) => {
           deptsMap[k] = { ...DEPTS[k], activeCount: AGENTS.filter(a => a.department === k).length };
         }
       }
-      return json(res, 200, { ok: true, departments: deptsMap, coreDepts: DEPT_KEYS });
+      return json(res, 200, { ok: true, depts: deptsMap, keys: DEPT_KEYS, departments: deptsMap, coreDepts: DEPT_KEYS });
     }
     if (url.pathname === '/api/departments' && req.method === 'POST') {
       const b = await body(req);

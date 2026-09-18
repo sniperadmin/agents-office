@@ -902,7 +902,8 @@ function cascadeRows() {
 }
 /* the floating billboard physically FLIES and docks as the rail header (the hero beat) */
 function flyBillboardIntoRail(k) {
-  const badge = deptRT[k].badge;
+  const badge = deptRT[k] ? deptRT[k].badge : null;
+  if (!badge) return;
   const from = badge.getBoundingClientRect();
   badge.style.display = 'none';
   const side = RAIL_SIDE[k];
@@ -1137,8 +1138,8 @@ function syncApprovals() {
   let total = 0;
   for (const k of DEPT_KEYS) {
     const n = stuckIn(k).length; total += n;
-    deptRT[k].apprRow.style.display = n ? 'flex' : 'none';
-    deptRT[k].apprN.textContent = n;
+    if (deptRT[k] && deptRT[k].apprRow) deptRT[k].apprRow.style.display = n ? 'flex' : 'none';
+    if (deptRT[k] && deptRT[k].apprN) deptRT[k].apprN.textContent = n;
   }
   const top = document.getElementById('topAppr');
   top.style.display = total ? 'inline-flex' : 'none';
@@ -1493,7 +1494,9 @@ setInterval(tickClock, 1000); tickClock();
 /* ---------- helpers ---------- */
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function sample(arr, n) {
-  const out = [...arr].sort(() => Math.random() - 0.5).slice(0, n);
+  if (!arr) return [];
+  const list = Array.isArray(arr) ? arr : Array.from(arr);
+  const out = [...list].sort(() => Math.random() - 0.5).slice(0, n);
   return out;
 }
 
@@ -1732,8 +1735,8 @@ function initDeptManager() {
 
   function renderDepts(deptsData) {
     if (!container) return;
-    const depts = deptsData.depts || {};
-    const keys = deptsData.keys || DEPT_KEYS;
+    const depts = deptsData.depts || deptsData.departments || {};
+    const keys = deptsData.keys || deptsData.coreDepts || DEPT_KEYS;
 
     // Render Active Departments
     container.innerHTML = keys.map(k => {
