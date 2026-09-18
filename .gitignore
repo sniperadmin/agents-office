@@ -7,3 +7,5 @@ office.agents.local.json
 brain/Agents Office/
 .DS_Store
 *.backup-*
+# Added by code-review-graph
+.code-review-graph/
