@@ -734,8 +734,8 @@ const server = http.createServer(async (req, res) => {
     const dm = url.pathname.match(/^\/api\/departments\/([^/]+)$/);
     if (dm && req.method === 'DELETE') {
       const deptKey = dm[1];
-      if (['exec', 'emails', 'sales', 'marketing', 'ops', 'fin', 'delivery', 'brain'].includes(deptKey)) {
-        return json(res, 400, { error: 'Core default departments cannot be disbanded.' });
+      if (deptKey === 'exec' || deptKey === 'executive') {
+        return json(res, 400, { error: 'Executive (CEO) department cannot be disbanded.' });
       }
       const { removedAgents } = db.deleteDepartment(deptKey);
       

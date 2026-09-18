@@ -1,7 +1,7 @@
 // Agents Office v2 — Three.js isometric office with zoom-driven LOD
 // Far: clean pods + agent counts (Image 1 read). Near: diorama with 3D people + holo screens (Image 2 read).
 import * as THREE from 'three';
-import { TOKENS, DEPTS, DEPT_KEYS, AGENTS, LAYOUT, WORKLINES, APPROVAL_ASKS, APPROVAL_BY_AGENT } from './data.ts';
+import { TOKENS, DEPTS, DEPT_KEYS, AGENTS, LAYOUT, WORKLINES, APPROVAL_ASKS, APPROVAL_BY_AGENT, getDeptDimensions } from './data.ts';
 import { V1, FILE_GEN, STATS, KPIS, P, rnd, ri, person, money } from './v1data.ts';
 import {
   PLINTH_H, mat, rbox, makePlinth, makeFloorTitle, makeDesk, makeChair,
@@ -196,16 +196,36 @@ function buildDeptBadge(k) {
     const px = L.pos[0], pz = L.pos[1];
     const dist = Math.hypot(px, pz) || 1;
     const ux = px / dist, uz = pz / dist;
-    deptRT[k].badgeAnchor = new THREE.Vector3(px + ux * 15, 8.6, pz + uz * 15);
+    const isFront = uz > 0.1;
+    const offset = isFront ? 24 : 15;
+    const h = isFront ? 1.2 : 8.6;
+    deptRT[k].badgeAnchor = new THREE.Vector3(px + ux * offset, h, pz + uz * offset);
   } else {
     deptRT[k].badgeAnchor = new THREE.Vector3(0, 8.6, 0);
   }
 }
 
 function buildDeptPod(key_) {
-  if (deptRT[key_]) return deptRT[key_];
+  if (deptRT[key_]) {
+    const dim = getDeptDimensions(key_);
+    if (deptRT[key_].L && (deptRT[key_].L.w !== dim.w || deptRT[key_].L.d !== dim.d)) {
+      deptRT[key_].L.w = dim.w;
+      deptRT[key_].L.d = dim.d;
+      const g = deptRT[key_].group;
+      if (g) {
+        for (let i = g.children.length - 1; i >= 0; i--) g.remove(g.children[i]);
+        const plinth = makePlinth(dim.w, dim.d, DEPTS[key_].floor);
+        g.add(plinth);
+        plinth.traverse(o => { if (o.isMesh) { o.userData.dept = key_; clickTargets.push(o); } });
+        plinth.children[0].userData.part = 'plinth'; plinth.children[1].userData.part = 'floor'; plinth.children[1].userData.chip = DEPTS[key_].chip;
+      }
+    }
+    return deptRT[key_];
+  }
+  const dim = getDeptDimensions(key_);
   const L = LAYOUT[key_];
   if (!L) return null;
+  L.w = dim.w; L.d = dim.d;
   const dept = DEPTS[key_];
   const g = new THREE.Group();
   g.position.set(L.pos[0], 0, L.pos[1]);
@@ -257,18 +277,21 @@ function buildAgent3D(a) {
   if (!dRT) return;
   const dept = DEPTS[a.dept];
   const L = dRT.L;
-  const cols = COLS[a.dept] || 2;
+  const dim = getDeptDimensions(a.dept);
+  const cols = dim.cols;
 
   const deptAgents = AGENTS.filter(x => x.dept === a.dept);
   const agentIdx = deptAgents.indexOf(a);
-  const grid = a.grid || [(agentIdx % cols), Math.floor(agentIdx / cols) + 1];
+  const colIdx = agentIdx % cols;
+  const rowIdx = Math.floor(agentIdx / cols);
 
-  const gx = (grid[0] - (cols - 1) / 2) * 8.6;
-  const gz = (grid[1] - 1) * 6.4 - 1;
+  const gx = (colIdx - (cols - 1) / 2) * dim.spacingX;
+  const startZ = -(dim.d / 2 - 5.5);
+  const gz = startZ + rowIdx * dim.spacingZ;
   const base = new THREE.Vector3(L.pos[0] + gx, 0.12, L.pos[1] + gz);
 
   const ANG = Math.PI / 4;
-  const rot = (v) => v.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), ANG);
+  const rot = (v: any) => v.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), ANG);
 
   const station = new THREE.Group();
   station.position.copy(base);
@@ -299,7 +322,7 @@ function buildAgent3D(a) {
   hud.appendChild(pill);
 
   R[a.id] = {
-    a, person, warn, pill, seat: person.position.clone(), seatRot: ANG + Math.PI,
+    a, station, person, warn, pill, seat: person.position.clone(), seatRot: ANG + Math.PI,
     stand: person.position.clone().add(rot(new THREE.Vector3(1.5, 0, 0.15))),
     state: 'working', bob: Math.random() * 10, path: null, pathI: 0, speed: 9.5, ask: null,
     v1: V1.find(x => x.id === a.id) || { id: a.id, name: a.name, greeting: `Hello, I am ${a.name}.` },
@@ -311,10 +334,21 @@ function realignAllDepts() {
   for (const k of DEPT_KEYS) {
     const L = LAYOUT[k];
     if (!L) continue;
+    const dim = getDeptDimensions(k);
+    L.w = dim.w; L.d = dim.d;
     const pos = L.pos;
     const dRT = deptRT[k];
     if (dRT) {
-      if (dRT.group) dRT.group.position.set(pos[0], 0, pos[1]);
+      if (dRT.group) {
+        dRT.group.position.set(pos[0], 0, pos[1]);
+        if (!dRT.L || dRT.L.w !== dim.w || dRT.L.d !== dim.d) {
+          for (let i = dRT.group.children.length - 1; i >= 0; i--) dRT.group.remove(dRT.group.children[i]);
+          const plinth = makePlinth(dim.w, dim.d, DEPTS[k].floor);
+          dRT.group.add(plinth);
+          plinth.traverse(o => { if (o.isMesh) { o.userData.dept = k; clickTargets.push(o); } });
+          plinth.children[0].userData.part = 'plinth'; plinth.children[1].userData.part = 'floor'; plinth.children[1].userData.chip = DEPTS[k].chip;
+        }
+      }
       dRT.L = L;
 
       if (k !== 'brain') {
@@ -341,22 +375,30 @@ function realignAllDepts() {
 
         const dist = Math.hypot(pos[0], pos[1]) || 1;
         const ux = pos[0] / dist, uz = pos[1] / dist;
-        if (dRT.badgeAnchor) dRT.badgeAnchor.set(pos[0] + ux * 15, 8.6, pos[1] + uz * 15);
+        const isFront = uz > 0.1;
+        const offset = isFront ? (L.d / 2 + 12) : (L.d / 2 + 5);
+        const h = isFront ? 1.2 : 8.6;
+        if (dRT.badgeAnchor) dRT.badgeAnchor.set(pos[0] + ux * offset, h, pos[1] + uz * offset);
       }
 
-      const cols = COLS[k] || 2;
+      const cols = dim.cols;
       const deptAgents = AGENTS.filter(x => x.dept === k);
       for (const a of deptAgents) {
         if (R[a.id]) {
           const agentIdx = deptAgents.indexOf(a);
-          const grid = a.grid || [(agentIdx % cols), Math.floor(agentIdx / cols) + 1];
-          const gx = (grid[0] - (cols - 1) / 2) * 8.6;
-          const gz = (grid[1] - 1) * 6.4 - 1;
+          const colIdx = agentIdx % cols;
+          const rowIdx = Math.floor(agentIdx / cols);
+          const gx = (colIdx - (cols - 1) / 2) * dim.spacingX;
+          const startZ = -(dim.d / 2 - 5.5);
+          const gz = startZ + rowIdx * dim.spacingZ;
           const base = new THREE.Vector3(pos[0] + gx, 0.12, pos[1] + gz);
           const ANG = Math.PI / 4;
           const rot = (v: any) => v.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), ANG);
 
           const r = R[a.id];
+          if (r.station) {
+            r.station.position.copy(base);
+          }
           r.seat.copy(base).add(rot(new THREE.Vector3(0, 0, 1.7)));
           r.stand.copy(base).add(rot(new THREE.Vector3(1.5, 0, 0.15)));
           if (r.state === 'working') {
@@ -1524,11 +1566,165 @@ window.CC = { flyTo, zoomToDept, zoomOut, zoomToApproval, requestApproval, openA
   setCam, setDark, brain, connectorReveal: () => mcp.startReveal(performance.now()),
   toggleBoard: () => tasks.toggle(), addTask: (agentId, title) => tasks.addTask(agentId, title), tasks, routines: () => tasks.routines };
 
+const RESERVE_TEMPLATES = [
+  {
+    key: 'dev',
+    name: 'DEVELOPMENT',
+    leadName: 'DEV LEAD',
+    chip: '#3B82F6',
+    model: 'antigravity-flash',
+    desc: 'Full-stack, Frontend, Backend, Mobile & Web3 Software Engineering',
+    skills: '45+ Specialized Dev Skills',
+    roles: ['Backend Architect', 'Frontend Dev', 'Mobile Builder', 'Solidity Engineer', '3D Specialist']
+  },
+  {
+    key: 'design',
+    name: 'DESIGN & UI/UX',
+    leadName: 'DESIGN LEAD',
+    chip: '#EC4899',
+    model: 'antigravity-flash',
+    desc: 'UI/UX Systems, Visual Identity, Brand Strategy & Spatial Interfaces',
+    skills: '25+ Design & UX Skills',
+    roles: ['UI Designer', 'UX Architect', 'UX Researcher', 'Brand Guardian', 'Whimsy Injector']
+  },
+  {
+    key: 'devops',
+    name: 'DEVOPS & CLOUD',
+    leadName: 'DEVOPS LEAD',
+    chip: '#10B981',
+    model: 'antigravity-flash',
+    desc: 'Cloud Infrastructure, SRE, Git Workflows & Database Optimization',
+    skills: '25+ DevOps & Infra Skills',
+    roles: ['DevOps Automator', 'Site Reliability Engineer', 'Cloud Security Architect', 'DB Optimizer']
+  },
+  {
+    key: 'product_qa',
+    name: 'PRODUCT & QA',
+    leadName: 'PRODUCT & QA LEAD',
+    chip: '#F59E0B',
+    model: 'antigravity-flash',
+    desc: 'Agile Sprint Planning, API Testing, Model QA & Accessibility Audits',
+    skills: '30+ Product & QA Skills',
+    roles: ['Sprint Prioritizer', 'API Tester', 'Model QA Auditor', 'Accessibility Specialist']
+  },
+  {
+    key: 'sec',
+    name: 'CYBERSECURITY',
+    leadName: 'SECURITY LEAD',
+    chip: '#EF4444',
+    model: 'antigravity-flash',
+    desc: 'Application Security, Threat Detection, Pen Testing & Incident Response',
+    skills: '20+ Security & AppSec Skills',
+    roles: ['AppSec Engineer', 'Penetration Tester', 'Threat Detection Specialist', 'Data Privacy Officer']
+  },
+  {
+    key: 'growth',
+    name: 'GROWTH & ANALYTICS',
+    leadName: 'GROWTH LEAD',
+    chip: '#8B5CF6',
+    model: 'antigravity-flash',
+    desc: 'Data Engineering, AEO/GEO Citations, Search Optimization & Growth Hacking',
+    skills: '35+ Growth & Data Skills',
+    roles: ['Growth Hacker', 'Analytics Reporter', 'AI Citation Strategist', 'Data Engineer']
+  },
+  {
+    key: 'legal_fin',
+    name: 'LEGAL & FINANCE',
+    leadName: 'LEGAL & FIN LEAD',
+    chip: '#64748B',
+    model: 'antigravity-flash',
+    desc: 'Legal Document Review, Intake, Accounts Payable & Deal Strategy',
+    skills: '20+ Legal & Financial Skills',
+    roles: ['Legal Doc Reviewer', 'Legal Client Intake', 'Accounts Payable Agent', 'Finance Tracker']
+  },
+  {
+    key: 'support',
+    name: 'CUSTOMER SUPPORT',
+    leadName: 'SUPPORT LEAD',
+    chip: '#14B8A6',
+    model: 'antigravity-flash',
+    desc: 'Multi-Channel Customer Service, Ticket Escalation & Client Success',
+    skills: '20+ Support & Service Skills',
+    roles: ['Support Responder', 'Customer Service Specialist', 'Client Success Manager']
+  },
+  {
+    key: 'marketing',
+    name: 'MARKETING',
+    leadName: 'MARKETING LEAD',
+    chip: '#E6A15C',
+    model: 'antigravity-flash',
+    desc: 'Cross-platform content matrix, paid social, organic positioning & copy',
+    skills: '15+ Marketing Skills',
+    roles: ['Marketing Head', 'Short-Form Specialist', 'LinkedIn Writer', 'Paid Ads']
+  },
+  {
+    key: 'sales',
+    name: 'SALES',
+    leadName: 'SALES LEAD',
+    chip: '#D8C376',
+    model: 'antigravity-flash',
+    desc: 'High-conversion funnel architecture, VSL scripting, quotes & outreach',
+    skills: '15+ Sales Skills',
+    roles: ['Sales Head', 'Funnel Architect', 'VSL Builder', 'Sales Scripter']
+  },
+  {
+    key: 'nurture',
+    name: 'NURTURE',
+    leadName: 'NURTURE LEAD',
+    chip: '#5ADEB7',
+    model: 'antigravity-flash',
+    desc: 'Email copywriting, lead magnet design & audience retention flows',
+    skills: '10+ Nurture Skills',
+    roles: ['Nurture Head', 'Email Copywriter', 'Lead Magnet Designer', 'Show-Rate Ops']
+  },
+  {
+    key: 'launch',
+    name: 'LAUNCH',
+    leadName: 'LAUNCH LEAD',
+    chip: '#C48A5A',
+    model: 'antigravity-flash',
+    desc: 'Campaign launch management, post-launch analytics & QA check-ins',
+    skills: '10+ Launch Skills',
+    roles: ['Launch Head', 'Launch Manager', 'Post-Launch Analyst', 'Quality Assurance']
+  },
+  {
+    key: 'partnerships',
+    name: 'PARTNERSHIPS',
+    leadName: 'PARTNERSHIPS LEAD',
+    chip: '#9B9BE6',
+    model: 'antigravity-flash',
+    desc: 'Joint venture outreach, affiliate program design & referral networks',
+    skills: '10+ Partnership Skills',
+    roles: ['Partnerships Head', 'JV Outreach', 'Affiliate Architect', 'Referral Designer']
+  },
+  {
+    key: 'scale',
+    name: 'SCALE',
+    leadName: 'SCALE LEAD',
+    chip: '#A580D8',
+    model: 'antigravity-flash',
+    desc: 'SOP automation, competitor analysis, client success & revenue modeling',
+    skills: '12+ Scale Skills',
+    roles: ['Scale Head', 'SOP Builder', 'Competitor Analyst', 'Client Success']
+  },
+  {
+    key: 'foundations',
+    name: 'FOUNDATIONS',
+    leadName: 'FOUNDATIONS HEAD',
+    chip: '#4A5568',
+    model: 'antigravity-flash',
+    desc: 'ICP building, niche selection, offer architecture & financial modeling',
+    skills: '12+ Foundations Skills',
+    roles: ['Foundations Head', 'ICP Builder', 'Offer Architect', 'Financial Modeler']
+  }
+];
+
 function initDeptManager() {
   const btn = document.getElementById('deptManagerBtn');
   const modal = document.getElementById('deptModal');
   const closeBtn = document.getElementById('deptModalClose');
   const container = document.getElementById('deptListContainer');
+  const reserveContainer = document.getElementById('reserveTeamsContainer');
   const form = document.getElementById('newDeptForm');
 
   if (!btn || !modal) return;
@@ -1538,9 +1734,11 @@ function initDeptManager() {
     if (!container) return;
     const depts = deptsData.depts || {};
     const keys = deptsData.keys || DEPT_KEYS;
+
+    // Render Active Departments
     container.innerHTML = keys.map(k => {
       const d = depts[k] || { name: k.toUpperCase(), chip: '#8FD3F4', ink: '#2E86AB', model: '' };
-      const isCustom = !['exec', 'executive', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale', 'brain'].includes(k);
+      const isDisbandable = k !== 'exec' && k !== 'executive';
       return `
         <div class="dept-card">
           <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -1550,7 +1748,10 @@ function initDeptManager() {
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
               <span style="font-size: 9px; color: var(--grey); letter-spacing: 0.1em;">KEY: ${k}</span>
-              ${isCustom ? `<button data-disband="${k}" class="dept-disband-btn" style="background:#e6939322; color:#C46060; border:1px solid #C4606044; border-radius:4px; padding:2px 8px; font-size:9px; font-weight:700; cursor:pointer;">DISBAND</button>` : ''}
+              ${isDisbandable 
+                ? `<button data-disband="${k}" class="dept-disband-btn" style="background:#e6939322; color:#C46060; border:1px solid #C4606044; border-radius:4px; padding:2px 8px; font-size:9px; font-weight:700; cursor:pointer;" title="Stand down team and send to reserve">STAND DOWN</button>` 
+                : `<span style="font-size: 8.5px; font-weight: 700; color: #E6A15C; background: rgba(230,161,92,0.1); padding: 2px 6px; border-radius: 4px;">CORE EXEC</span>`
+              }
             </div>
           </div>
           <div style="margin-top: 6px;">
@@ -1570,6 +1771,64 @@ function initDeptManager() {
       `;
     }).join('');
 
+    // Render Reserve Teams Catalog
+    if (reserveContainer) {
+      reserveContainer.innerHTML = RESERVE_TEMPLATES.map(t => {
+        const isActive = keys.includes(t.key);
+        return `
+          <div style="border: 1px solid var(--hairline); border-radius: 14px; padding: 12px 14px; background: ${isActive ? 'rgba(30,144,112,0.04)' : '#fff'}; display: flex; flex-direction: column; justify-content: space-between; gap: 8px;">
+            <div>
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="width: 10px; height: 10px; border-radius: 50%; background: ${t.chip}; inline-block;"></span>
+                  <span style="font-weight: 700; font-size: 12px; letter-spacing: 0.05em; color: var(--ink);">${t.name}</span>
+                </div>
+                ${isActive 
+                  ? `<span style="font-size: 9px; font-weight: 700; color: #1E9070; background: rgba(30,144,112,0.15); padding: 2px 6px; border-radius: 4px;">✓ ACTIVE</span>`
+                  : `<span style="font-size: 9px; font-weight: 600; color: var(--grey); background: rgba(0,0,0,0.05); padding: 2px 6px; border-radius: 4px;">RESERVE</span>`
+                }
+              </div>
+              <div style="font-size: 10.5px; color: var(--grey); line-height: 1.3; margin-bottom: 6px;">${t.desc}</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;">
+                <span style="font-size: 8.5px; font-weight: 700; color: #3B82F6; background: rgba(59,130,246,0.08); padding: 1px 5px; border-radius: 3px;">${t.skills}</span>
+                ${t.roles.map(r => `<span style="font-size: 8.5px; color: var(--grey); background: rgba(0,0,0,0.03); padding: 1px 5px; border-radius: 3px;">${r}</span>`).join('')}
+              </div>
+            </div>
+            <div>
+              ${isActive 
+                ? `<button data-disband="${t.key}" class="dept-disband-btn" style="width: 100%; padding: 6px 12px; background: rgba(196,96,96,0.08); color: #C46060; border: 1px solid rgba(196,96,96,0.3); border-radius: 8px; font-size: 10px; font-weight: 700; cursor: pointer;">DEACTIVATE / STAND DOWN</button>`
+                : `<button data-activate-key="${t.key}" class="reserve-activate-btn" style="width: 100%; padding: 7px 12px; background: var(--ink); color: var(--cream); border: none; border-radius: 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; cursor: pointer; transition: background .2s;">⚡ ACTIVATE TEAM (1-CLICK)</button>`
+              }
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Attach listeners for activate buttons
+    modal.querySelectorAll('.reserve-activate-btn').forEach(b => {
+      b.addEventListener('click', async (e) => {
+        const key = e.target.getAttribute('data-activate-key');
+        const tmpl = RESERVE_TEMPLATES.find(t => t.key === key);
+        if (!tmpl) return;
+
+        try {
+          const res = await fetch('/api/departments', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: tmpl.name, key: tmpl.key, leadName: tmpl.leadName, model: tmpl.model, chip: tmpl.chip })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (tasks && tasks.syncDepartments) tasks.syncDepartments(data);
+            if (tasks && tasks.syncAgents) tasks.syncAgents(data.agents);
+            refresh3D();
+            loadDepts();
+          }
+        } catch (err) { console.error('Could not activate reserve team:', err); }
+      });
+    });
+
     container.querySelectorAll('.dept-disband-btn').forEach(b => {
       b.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -1582,6 +1841,21 @@ function initDeptManager() {
         }
       });
     });
+
+    if (reserveContainer) {
+      reserveContainer.querySelectorAll('.dept-disband-btn').forEach(b => {
+        b.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const k = e.target.getAttribute('data-disband');
+          if (confirm(`Are you sure you want to deactivate department ${k.toUpperCase()}?`)) {
+            if (tasks && tasks.disbandDepartment) {
+              await tasks.disbandDepartment(k);
+              loadDepts();
+            }
+          }
+        });
+      });
+    }
 
     container.querySelectorAll('.dept-model-select').forEach(sel => {
       sel.addEventListener('change', async (e) => {
@@ -1648,6 +1922,7 @@ initDeptManager();
 
 function initMcpManager() {
   const topconn = document.getElementById('topconn');
+  const mcpManagerBtn = document.getElementById('mcpManagerBtn');
   const modal = document.getElementById('mcpModal');
   const closeBtn = document.getElementById('mcpModalClose');
   const addBtn = document.getElementById('addMcpBtn');
@@ -1660,13 +1935,16 @@ function initMcpManager() {
   if (!modal) return;
   modal.addEventListener('wheel', (e) => { e.stopPropagation(); }, { passive: true });
 
+  const openModal = () => {
+    modal.classList.add('on');
+    loadMcpServers();
+  };
+
+  if (mcpManagerBtn) mcpManagerBtn.addEventListener('click', openModal);
   if (topconn) {
     topconn.style.cursor = 'pointer';
     topconn.title = 'Click to customize MCP servers and connectors';
-    topconn.addEventListener('click', (e) => {
-      modal.classList.add('on');
-      loadMcpServers();
-    });
+    topconn.addEventListener('click', openModal);
   }
 
   closeBtn?.addEventListener('click', () => { modal.classList.remove('on'); });
@@ -1744,6 +2022,7 @@ function initMcpManager() {
                 <span style="font-size: 9px; color: var(--grey);">source: ${s.source || 'custom'}</span>
               </div>
               <div style="display: flex; align-items: center; gap: 8px;">
+                <button data-mcp-edit="${s.id}" class="mcp-edit-btn" style="background:rgba(255,255,255,0.06); color:var(--fg); border:1px solid var(--border); border-radius:4px; padding:3px 8px; font-size:10px; font-weight:700; cursor:pointer;">EDIT</button>
                 <button data-mcp-toggle="${s.id}" class="mcp-toggle-btn" style="background: ${isAllowed ? '#2E8B5722' : '#C4606022'}; color: ${isAllowed ? '#2E8B57' : '#C46060'}; border: 1px solid ${isAllowed ? '#2E8B5744' : '#C4606044'}; border-radius: 4px; padding: 3px 10px; font-size: 10px; font-weight: 700; cursor: pointer;">
                   ${isAllowed ? '✓ ALLOWED' : '✕ BLOCKED'}
                 </button>
@@ -1767,6 +2046,21 @@ function initMcpManager() {
       }).join('');
 
       // Attach event handlers
+      listContainer.querySelectorAll('.mcp-edit-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const sid = (e.target as HTMLElement).getAttribute('data-mcp-edit')!;
+          const s = servers.find((x: any) => x.id === sid);
+          if (!s || !formContainer) return;
+          (document.getElementById('mcpFormId') as HTMLInputElement).value = s.id;
+          (document.getElementById('mcpFormName') as HTMLInputElement).value = s.name;
+          (document.getElementById('mcpFormKey') as HTMLInputElement).value = s.key || s.id;
+          (document.getElementById('mcpFormCommand') as HTMLInputElement).value = s.command || s.target || '';
+          (document.getElementById('mcpFormTitle') as HTMLElement).textContent = `Edit MCP Server: ${s.name}`;
+          renderFormDepts(s.depts || DEPT_KEYS);
+          formContainer.style.display = 'block';
+        });
+      });
+
       listContainer.querySelectorAll('.mcp-toggle-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const sid = (e.target as HTMLElement).getAttribute('data-mcp-toggle')!;

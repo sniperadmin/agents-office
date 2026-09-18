@@ -597,8 +597,8 @@
   /* the big editor: the same task box, room to write a brief */
   #tpBig { position: fixed; inset: 0; z-index: 26; display: none; align-items: center; justify-content: center; background: rgba(21,20,20,.42); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
   #tpBig.on { display: flex; }
-  #deptModal { position: fixed; inset: 0; z-index: 10000; display: none; align-items: center; justify-content: center; background: rgba(21,20,20,.54); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-  #deptModal.on { display: flex !important; }
+  #deptModal, #mcpModal { position: fixed; inset: 0; z-index: 10000; display: none; align-items: center; justify-content: center; background: rgba(21,20,20,.54); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  #deptModal.on, #mcpModal.on { display: flex !important; }
   .tb-box { width: min(760px, 92vw); height: min(560px, 84vh); background: #fff; border: 1.5px solid var(--ink); border-radius: 22px; box-shadow: 0 34px 90px rgba(21,20,20,.3);
     display: flex; flex-direction: column; padding: 14px 16px 12px; gap: 8px; animation: tbin .35s var(--ease); }
   @keyframes tbin { from { opacity: 0; transform: translateY(10px) scale(.985); } }
@@ -935,6 +935,7 @@
 <div id="topbar">
   <span class="brand">AGENTS OFFICE <span class="ver">V3</span></span>
   <button id="deptManagerBtn" class="tag" style="cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:5px; pointer-events:auto; margin-left:6px;">🏢 DEPARTMENTS</button>
+  <button id="mcpManagerBtn" class="tag" style="cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:5px; pointer-events:auto; margin-left:6px;">⚡ MCP CONNECTORS</button>
   <div id="topconn"></div>
   <span class="sp"></span>
   <div id="topmodels"></div>
@@ -1030,7 +1031,7 @@
 </div>
 <!-- Department Manager Modal -->
 <div id="deptModal" class="tp-big">
-  <div class="tb-box" style="width: min(720px, 94vw); max-height: min(640px, 88vh); overflow-y: auto;">
+  <div class="tb-box" style="width: min(840px, 94vw); max-height: min(720px, 90vh); overflow-y: auto;">
     <div class="tb-head">
       <span class="dot" style="background:#5ADEB7"></span>
       <span style="font-family: var(--serif); font-size: 18px;">DEPARTMENT MANAGER & ROSTER</span>
@@ -1038,28 +1039,47 @@
       <button id="deptModalClose" class="tb-close" title="Close (Esc)">✕</button>
     </div>
     
-    <div style="font-size: 11px; color: var(--grey); margin-bottom: 12px;">
-      Manage company departments, assign specific AI models to each department, and create new specialized teams.
+    <div style="font-size: 11px; color: var(--grey); margin-bottom: 14px;">
+      Manage active company departments, activate pre-configured Reserve Teams mapped from your 275 skills library, or provision custom specialized teams.
     </div>
 
-    <div id="deptListContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-bottom: 16px;">
+    <div style="font-family: var(--serif); font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: #1E9070; display: inline-block;"></span>
+      <span>ACTIVE DEPARTMENTS IN OFFICE</span>
+    </div>
+    <div id="deptListContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-bottom: 20px;">
       <!-- Populated dynamically -->
     </div>
 
-    <div style="border-top: 1px solid var(--hairline); padding-top: 14px; margin-top: 8px;">
-      <h4 style="font-family: var(--serif); font-size: 18px; margin-bottom: 10px; font-weight: 400;">+ Create New Department</h4>
-      <form id="newDeptForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+    <div style="border-top: 1px solid var(--hairline); padding-top: 16px; margin-top: 8px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+        <h4 style="font-family: var(--serif); font-size: 15px; font-weight: 600; color: var(--ink); margin: 0;">⚡ RESERVE TEAMS CATALOG (1-CLICK ACTIVATION)</h4>
+        <span style="font-size: 10px; font-weight: 700; color: #1E9070; background: rgba(30,144,112,0.1); border: 1px solid rgba(30,144,112,0.3); border-radius: 99px; padding: 2px 8px;">275 SKILLS READY</span>
+      </div>
+      <p style="font-size: 11px; color: var(--grey); margin-top: 0; margin-bottom: 12px;">
+        Pre-configured software & agency teams mapped to your 275 template skills. Click to activate and deploy instantly to the 3D office floor!
+      </p>
+      <div id="reserveTeamsContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; margin-bottom: 20px;">
+        <!-- Populated dynamically from RESERVE_TEMPLATES -->
+      </div>
+    </div>
+
+    <details style="border-top: 1px solid var(--hairline); padding-top: 12px; margin-top: 4px;">
+      <summary style="font-family: var(--serif); font-size: 13px; cursor: pointer; color: var(--grey); font-weight: 500; outline: none; padding: 4px 0;">
+        + Advanced Custom Department Creator
+      </summary>
+      <form id="newDeptForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.02); border-radius: 12px; border: 1px solid var(--hairline);">
         <div>
           <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Department Name</label>
-          <input type="text" id="ndName" class="dept-input" placeholder="e.g. DEVELOPMENT" required>
+          <input type="text" id="ndName" class="dept-input" placeholder="e.g. DATA PLATFORM" required>
         </div>
         <div>
           <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Department Key</label>
-          <input type="text" id="ndKey" class="dept-input" placeholder="e.g. dev" required>
+          <input type="text" id="ndKey" class="dept-input" placeholder="e.g. data_platform" required>
         </div>
         <div>
           <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Lead Agent Name</label>
-          <input type="text" id="ndLead" class="dept-input" placeholder="e.g. DEV LEAD">
+          <input type="text" id="ndLead" class="dept-input" placeholder="e.g. DATA LEAD">
         </div>
         <div>
           <label style="font-size: 9px; letter-spacing: 0.12em; color: var(--grey); font-weight: 700; text-transform: uppercase;">Default AI Model</label>
@@ -1083,7 +1103,7 @@
           </button>
         </div>
       </form>
-    </div>
+    </details>
   </div>
 </div>
 <!-- MCP Manager Modal -->

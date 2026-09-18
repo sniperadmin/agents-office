@@ -379,8 +379,7 @@ export function initTasks(ctx) {
   }
 
   async function disbandDepartment(deptKey: string) {
-    const CORE_DEPTS = ['exec', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale', 'brain'];
-    if (CORE_DEPTS.includes(deptKey)) return false;
+    if (deptKey === 'exec' || deptKey === 'executive') return false;
     try {
       const res = await fetch(`${API}/departments/${deptKey}`, { method: 'DELETE' });
       if (res.ok) {

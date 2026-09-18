@@ -156,6 +156,19 @@ const DEFAULT_LAYOUTS: Record<string, LayoutConfig> = {
 
 export const CORE_DEPTS = new Set(['exec', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale', 'brain']);
 
+export function getDeptDimensions(key: string): { w: number; d: number; cols: number; rows: number; spacingX: number; spacingZ: number } {
+  if (key === 'brain') return { w: 16, d: 16, cols: 1, rows: 1, spacingX: 0, spacingZ: 0 };
+  const count = AGENTS.filter(a => a.dept === key || a.department === key).length;
+  const n = Math.max(1, count);
+  const cols = n <= 3 ? 2 : (n <= 8 ? 3 : (n <= 15 ? 4 : 5));
+  const rows = Math.ceil(n / cols);
+  const spacingX = 6.8;
+  const spacingZ = 5.2;
+  const w = Math.max(22, (cols - 1) * spacingX + 11.0);
+  const d = Math.max(24, (rows - 1) * spacingZ + 14.0);
+  return { w, d, cols, rows, spacingX, spacingZ };
+}
+
 export function getSymmetricPos(key: string): [number, number] {
   if (key === 'brain') return [0, 0];
   const active = DEPT_KEYS.filter(k => k !== 'brain');
@@ -164,8 +177,8 @@ export function getSymmetricPos(key: string): [number, number] {
   const effectiveIdx = idx >= 0 ? idx : N;
   const total = idx >= 0 ? N : N + 1;
   const theta = -Math.PI / 2 + (effectiveIdx * 2 * Math.PI) / total;
-  const Rx = Math.max(44, 34 + total * 2);
-  const Rz = Math.max(36, 28 + total * 1.8);
+  const Rx = Math.max(56, 40 + total * 3);
+  const Rz = Math.max(46, 34 + total * 2.5);
   const x = Math.round(Rx * Math.cos(theta));
   const z = Math.round(Rz * Math.sin(theta));
   return [x, z];
@@ -176,7 +189,8 @@ export const LAYOUT: Record<string, LayoutConfig> = new Proxy(DEFAULT_LAYOUTS, {
     if (typeof prop === 'string') {
       if (prop === 'brain') return { pos: [0, 0], w: 16, d: 16 };
       const pos = getSymmetricPos(prop);
-      return { pos, w: 20, d: 28 };
+      const dim = getDeptDimensions(prop);
+      return { pos, w: dim.w, d: dim.d };
     }
     return undefined;
   }

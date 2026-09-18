@@ -16,5 +16,7 @@
     "dev": {
       "model": "antigravity-flash"
     }
-  }
+  },
+  "brainPath": "/home/nasr/Desktop/agents-office/brain",
+  "effort": ""
 }
