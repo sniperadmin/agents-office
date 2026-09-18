@@ -1825,7 +1825,7 @@ function initDeptManager() {
           const res = await fetch('/api/departments', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name: tmpl.name, key: tmpl.key, leadName: tmpl.leadName, model: tmpl.model, chip: tmpl.chip })
+            body: JSON.stringify({ name: tmpl.name, key: tmpl.key, leadName: tmpl.leadName, model: tmpl.model, chip: tmpl.chip, roles: tmpl.roles })
           });
           if (res.ok) {
             const data = await res.json();

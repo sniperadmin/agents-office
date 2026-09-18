@@ -43,15 +43,57 @@ const roster = loadRoster(BRAIN);
 const AGENTS = roster.agents; // id · department · lead · name · role · does · tools · brief
 for (const w of roster.problems) console.warn('agents:', w);
 
+const RESERVE_ROLES: Record<string, string[]> = {
+  dev: ['Backend Architect', 'Frontend Dev', 'Mobile Builder', 'Solidity Engineer', '3D Specialist'],
+  design: ['UI Designer', 'UX Architect', 'UX Researcher', 'Brand Guardian', 'Whimsy Injector'],
+  devops: ['DevOps Automator', 'Site Reliability Engineer', 'Cloud Security Architect', 'DB Optimizer'],
+  product_qa: ['Sprint Prioritizer', 'API Tester', 'Model QA Auditor', 'Accessibility Specialist'],
+  sec: ['AppSec Engineer', 'Penetration Tester', 'Threat Detection Specialist', 'Data Privacy Officer'],
+  growth: ['Growth Hacker', 'Analytics Reporter', 'AI Citation Strategist', 'Data Engineer'],
+  legal_fin: ['Legal Doc Reviewer', 'Legal Client Intake', 'Accounts Payable Agent', 'Finance Tracker'],
+  support: ['Support Responder', 'Customer Service Specialist', 'Client Success Manager']
+};
+
+function ensureDepartmentAgents(deptKey: string, deptName: string, leadName?: string, model?: string, rolesInput?: string[]) {
+  const k = deptKey;
+  const leadId = `${k}_lead`;
+  if (!AGENTS.some(a => a.id === leadId)) {
+    const leadObj = {
+      id: leadId, name: leadName || `${deptName.toUpperCase()} LEAD`,
+      dept: k, department: k, lead: true, grid: [0.5, 0],
+      hair: '#1f1f1f', skin: '#F0C9A0', role: `${deptName} Lead`,
+      does: `Manages ${deptName} operations`, tools: [], brief: '',
+      model: model || '', effort: ''
+    };
+    AGENTS.push(leadObj as any);
+    db.addOrUpdateAgent(leadObj as any);
+  }
+
+  const roles = Array.isArray(rolesInput) && rolesInput.length ? rolesInput : (RESERVE_ROLES[k] || []);
+  roles.forEach((rName: string, idx: number) => {
+    const rSlug = String(rName).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const memberId = `${k}_${rSlug}`;
+    if (!AGENTS.some(a => a.id === memberId)) {
+      const col = idx % 2 === 0 ? 0 : 1;
+      const row = Math.floor(idx / 2) + 1;
+      const memberObj = {
+        id: memberId, name: rName.toUpperCase(), dept: k, department: k, lead: false,
+        grid: [col, row], hair: '#2b2b2b', skin: '#F0C9A0', role: rName,
+        does: `${rName} specialist for ${deptName}`, tools: [], brief: '',
+        model: model || '', effort: ''
+      };
+      AGENTS.push(memberObj as any);
+      db.addOrUpdateAgent(memberObj as any);
+    }
+  });
+}
+
 if (Array.isArray(cfg.customDepartments)) {
   for (const d of cfg.customDepartments) {
     if (d.key) {
       if (!DEPT_KEYS.includes(d.key)) DEPT_KEYS.push(d.key);
       DEPTS[d.key] = { name: d.name || d.key.toUpperCase(), short: d.name || d.key.toUpperCase(), chip: d.chip || '#8FD3F4', ink: d.ink || '#2E86AB', floor: d.floor || '#E6F4FB' };
-      const leadId = `${d.key}_lead`;
-      if (!AGENTS.some(a => a.id === leadId || ((a.dept === d.key || a.department === d.key) && a.lead))) {
-        AGENTS.push({ id: leadId, name: d.leadName || `${d.name || d.key.toUpperCase()} LEAD`, dept: d.key, department: d.key, lead: true, grid: [0.5, 0], hair: '#1f1f1f', skin: '#F0C9A0', role: `${d.name || d.key} Lead`, does: `Manages ${d.name || d.key} operations`, tools: [], brief: '', model: d.model || '', effort: '' });
-      }
+      ensureDepartmentAgents(d.key, d.name || d.key.toUpperCase(), d.leadName, d.model, d.roles);
     }
   }
 }
@@ -608,19 +650,15 @@ const server = http.createServer(async (req, res) => {
         short: String(b.short || b.name).trim(),
         chip: String(b.chip || '#8FD3F4'), ink: String(b.ink || '#2E86AB'),
         floor: String(b.floor || '#E6F4FB'), model: normModel(b.model) || undefined,
-        leadName: b.leadName || `${String(b.name).trim().toUpperCase()} LEAD`
+        leadName: b.leadName || `${String(b.name).trim().toUpperCase()} LEAD`,
+        roles: Array.isArray(b.roles) ? b.roles : (RESERVE_ROLES[k] || [])
       };
       db.addOrUpdateDepartment(deptObj);
       if (!DEPT_KEYS.includes(k)) DEPT_KEYS.push(k);
       DEPTS[k] = { name: deptObj.name, short: deptObj.short, chip: deptObj.chip, ink: deptObj.ink, floor: deptObj.floor };
-      const leadId = `${k}_lead`;
-      if (!AGENTS.some(a => a.id === leadId)) {
-        const leadObj = { id: leadId, name: deptObj.leadName, dept: k, department: k, lead: true, grid: [0.5, 0], hair: '#1f1f1f', skin: '#F0C9A0', role: `${deptObj.name} Lead`, does: `Manages ${deptObj.name} operations`, tools: [], brief: '', model: deptObj.model || '', effort: '' };
-        AGENTS.push(leadObj as any);
-        db.addOrUpdateAgent(leadObj as any);
-      }
+      ensureDepartmentAgents(k, deptObj.name, deptObj.leadName, deptObj.model, deptObj.roles);
       pushEvent('department_created', { key: k });
-      return json(res, 200, { ok: true, department: deptObj });
+      return json(res, 200, { ok: true, department: deptObj, agents: agentsOut() });
     }
     const dm = url.pathname.match(/^\/api\/departments\/([^/]+)$/);
     if (dm && req.method === 'DELETE') {
