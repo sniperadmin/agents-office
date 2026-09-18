@@ -91,6 +91,7 @@ export function makeDeskScreenTexture(chip) {
   c.width = 256; c.height = 160;
   const x = c.getContext('2d');
   const draw = (lines) => {
+    if (!Array.isArray(lines)) lines = [];
     // live cream screen (v1 rule: wood desks with live cream/mint screens)
     x.fillStyle = '#FDFFF8'; x.fillRect(0, 0, 256, 160);
     x.fillStyle = chip; x.fillRect(0, 0, 256, 26);

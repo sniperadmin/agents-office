@@ -1412,11 +1412,17 @@ function tickSim(now, dt) {
   }
   // rotate desk screen content — a couple of screens refresh every beat so the room reads busy
   if (Math.floor(now / 1800) !== Math.floor((now - dt * 1000) / 1800)) {
-    const n = 1 + (Math.random() < 0.5 ? 1 : 0);
-    for (let i = 0; i < n; i++) {
-      const ss = screenSets[Math.floor(Math.random() * screenSets.length)];
-      ss.screenSet.draw(sample(WORKLINES[ss.dept], 3).map(l => l.slice(0, 28)));
-      ss.screenSet.tex.needsUpdate = true;
+    if (screenSets.length > 0) {
+      const n = 1 + (Math.random() < 0.5 ? 1 : 0);
+      for (let i = 0; i < n; i++) {
+        const ss = screenSets[Math.floor(Math.random() * screenSets.length)];
+        if (ss && ss.screenSet && ss.screenSet.draw) {
+          const rawLines = sample(WORKLINES[ss.dept], 3) || [];
+          const lines = Array.isArray(rawLines) ? rawLines.map(l => String(l || '').slice(0, 28)) : [];
+          ss.screenSet.draw(lines);
+          if (ss.screenSet.tex) ss.screenSet.tex.needsUpdate = true;
+        }
+      }
     }
   }
 }

@@ -95,50 +95,53 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
     return dotTex[hex];
   }
 
-  for (const [dept, keys] of Object.entries(BY_DEPT)) {
+  for (const [dept, keys] of Object.entries(BY_DEPT || {})) {
     const L = LAYOUT[dept];
     if (!L) continue;
     const D = DOCKS[dept] || { dir: SR.clone().negate(), dist: 12.5, h: 8.0 };
-    const glowT = glowTexture(DEPTS[dept].chip);
+    const glowT = glowTexture((DEPTS[dept] && DEPTS[dept].chip) || '#8FD3F4');
     const anchor = new THREE.Vector3(
       L.pos[0] + D.dir.x * D.dist, D.h, L.pos[1] + D.dir.z * D.dist);
     byDept[dept] = [];
-    keys.forEach((key, i) => {
-      const def = LOGOS[key];
-      const tex = loader.load(def.img);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: glowT, transparent: true, opacity: 0, depthTest: false }));
-      glow.renderOrder = 48;
-      scene.add(glow);
-      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-      s.renderOrder = 50;
-      s.userData.dept = dept;       // joins the focus-dim pass
-      s.userData.mcpKey = key;
-      scene.add(s);
-      sprites.push(s);
+    if (Array.isArray(keys)) {
+      keys.forEach((key, i) => {
+        const def = LOGOS[key];
+        if (!def) return;
+        const tex = loader.load(def.img);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: glowT, transparent: true, opacity: 0, depthTest: false }));
+        glow.renderOrder = 48;
+        scene.add(glow);
+        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+        s.renderOrder = 50;
+        s.userData.dept = dept;       // joins the focus-dim pass
+        s.userData.mcpKey = key;
+        scene.add(s);
+        sprites.push(s);
 
-      const label = document.createElement('div');
-      label.className = 'mcpl';
-      label.textContent = def.name.toUpperCase();
-      hud.appendChild(label);
+        const label = document.createElement('div');
+        label.className = 'mcpl';
+        label.textContent = def.name.toUpperCase();
+        hud.appendChild(label);
 
-      const item = {
-        dept, key, name: def.name, sprite: s, glow, label,
-        anchor, i, n: keys.length,
-        bobPhase: i * 0.9 + Math.random() * 0.4,
-        pulseT0: -1e9, pulseAmp: 0.3,
-        lastActive: performance.now() - Math.random() * 9000,
-      };
-      items.push(item);
-      byDept[dept].push(item);
-      byDeptKey[dept + ':' + key] = item;
-    });
+        const item = {
+          dept, key, name: def.name, sprite: s, glow, label,
+          anchor, i, n: keys.length,
+          bobPhase: i * 0.9 + Math.random() * 0.4,
+          pulseT0: -1e9, pulseAmp: 0.3,
+          lastActive: performance.now() - Math.random() * 9000,
+        };
+        items.push(item);
+        byDept[dept].push(item);
+        byDeptKey[dept + ':' + key] = item;
+      });
+    }
 
     // the group label — this is what names the dock "CONNECTORS" at every zoom
     const conn = document.createElement('div');
     conn.className = 'connl';
-    conn.innerHTML = `<span class="dot" style="background:${DEPTS[dept].chip}"></span>CONNECTORS`;
+    conn.innerHTML = `<span class="dot" style="background:${(DEPTS[dept] && DEPTS[dept].chip) || '#8FD3F4'}"></span>CONNECTORS`;
     hud.appendChild(conn);
     docks[dept] = {
       anchor, conn,
@@ -154,15 +157,16 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
   // at overview all connector traffic originates from the top bar instead.
   // SHARED connectors (gmail: five depts; notion: every dept, V3.1) sit at the far RIGHT end
   // of the strip and each runs its OWN loom (below) instead of joining any dept's cluster/fan
-  const SHARED = LIVE ? connectors.shared : { notion: '#151414', gmail: '#EA4335' };
-  const uniqKeys = [...new Set(Object.values(BY_DEPT).flat())].filter(k => !SHARED[k]);
-  for (const k of ((LIVE && connectors.off) || [])) if (!uniqKeys.includes(k)) uniqKeys.push(k); // present but unusable: shown grey, never wired
-  for (const k of Object.keys(SHARED)) uniqKeys.push(k);
+  const SHARED = LIVE ? (connectors.shared || { notion: '#151414', gmail: '#EA4335' }) : { notion: '#151414', gmail: '#EA4335' };
+  const uniqKeys = [...new Set(Object.values(BY_DEPT || {}).filter(Array.isArray).flat())].filter(k => k && LOGOS[k] && !SHARED[k]);
+  for (const k of ((LIVE && connectors.off) || [])) if (k && !uniqKeys.includes(k)) uniqKeys.push(k); // present but unusable: shown grey, never wired
+  for (const k of Object.keys(SHARED)) if (k) uniqKeys.push(k);
   const topconn = document.getElementById('topconn');
   const topImgs = {};
   if (topconn) {
     topconn.innerHTML = `<span class="tc-lab"><span class="dot"></span>CONNECTED TO</span>`;
     uniqKeys.forEach((k, i) => {
+      if (!LOGOS[k]) return;
       const img = document.createElement('img');
       img.src = LOGOS[k].img;
       img.alt = img.title = LOGOS[k].name;
@@ -203,11 +207,13 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
   hud.insertBefore(svg, hud.firstChild); // under every HUD overlay, above the 3D canvas
   const PORT_CORNER = { marketing: [-1, 1], emails: [-1, -1], sales: [1, -1], ops: [1, -1], fin: [1, -1], delivery: [-1, -1] };
   const wires = {}, wirePulses = [];
-  Object.keys(BY_DEPT).forEach((dept, ji) => {
-    const L = LAYOUT[dept], [cx, cz] = PORT_CORNER[dept];
+  Object.keys(BY_DEPT || {}).forEach((dept, ji) => {
+    const L = LAYOUT[dept];
+    if (!L) return;
+    const [cx, cz] = PORT_CORNER[dept] || [-1, 1];
     const path = document.createElementNS(svgNS, 'path');
     path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', DEPTS[dept].chip);
+    path.setAttribute('stroke', (DEPTS[dept] && DEPTS[dept].chip) || '#8FD3F4');
     path.setAttribute('stroke-width', '1.6');
     path.setAttribute('stroke-linecap', 'round');
     path.setAttribute('stroke-dasharray', '3 8');
@@ -216,18 +222,18 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
     // node under the bar — makes "which tools feed this dept" readable at a glance
     const branch = document.createElementNS(svgNS, 'path');
     branch.setAttribute('fill', 'none');
-    branch.setAttribute('stroke', DEPTS[dept].chip);
+    branch.setAttribute('stroke', (DEPTS[dept] && DEPTS[dept].chip) || '#8FD3F4');
     branch.setAttribute('stroke-width', '1.3');
     branch.setAttribute('stroke-linecap', 'round');
     branch.setAttribute('stroke-dasharray', '2 5');
     svg.appendChild(branch);
     const jdot = document.createElementNS(svgNS, 'circle'); // junction node
     jdot.setAttribute('r', '1.9');
-    jdot.setAttribute('fill', DEPTS[dept].chip);
+    jdot.setAttribute('fill', (DEPTS[dept] && DEPTS[dept].chip) || '#8FD3F4');
     svg.appendChild(jdot);
     const dot = document.createElementNS(svgNS, 'circle'); // the pod-side socket
     dot.setAttribute('r', '2.6');
-    dot.setAttribute('fill', DEPTS[dept].chip);
+    dot.setAttribute('fill', (DEPTS[dept] && DEPTS[dept].chip) || '#8FD3F4');
     svg.appendChild(dot);
     wires[dept] = { path, branch, jdot, dot, offset: 0, ji,
       port: [L.pos[0] + cx * L.w / 2, 1.3, L.pos[1] + cz * L.d / 2],
@@ -253,8 +259,10 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
     jdot.setAttribute('fill', ink);
     svg.appendChild(jdot);
     const wiresOf = {};
-    Object.keys(BY_DEPT).filter(d => BY_DEPT[d].includes(key)).forEach(dept => {
-      const L = LAYOUT[dept], [cx, cz] = PORT_CORNER[dept];
+    Object.keys(BY_DEPT || {}).filter(d => Array.isArray(BY_DEPT[d]) && BY_DEPT[d].includes(key)).forEach(dept => {
+      const L = LAYOUT[dept];
+      if (!L) return;
+      const [cx, cz] = PORT_CORNER[dept] || [-1, 1];
       const path = document.createElementNS(svgNS, 'path');
       path.setAttribute('fill', 'none');
       path.setAttribute('stroke', ink);
@@ -341,7 +349,7 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
   function wirePulse(dept, { reverse = false, delay = 0, scale = 1, shared: sk = null, model = null } = {}) {
     const el = document.createElementNS(svgNS, 'circle');
     el.setAttribute('r', 2.2 * scale);
-    el.setAttribute('fill', model ? MODELS[model] : sk ? SHARED[sk] : DEPTS[dept].chip);
+    el.setAttribute('fill', model ? MODELS[model] : sk ? SHARED[sk] : ((DEPTS[dept] && DEPTS[dept].chip) || '#8FD3F4'));
     el.setAttribute('opacity', '0');
     svg.appendChild(el);
     wirePulses.push({ dept, el, reverse, shared: sk, model, t0: performance.now() + delay, dur: 1400 });
@@ -355,10 +363,12 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
       if (f) {
         topconn.style.opacity = 1; topconn.style.visibility = 'visible';
         if (stripDept !== f) { // centre the strip and name the department it feeds
-          for (const [k, img] of Object.entries(topImgs)) img.style.display = BY_DEPT[f].includes(k) ? '' : 'none';
+          for (const [k, img] of Object.entries(topImgs)) img.style.display = (BY_DEPT[f] && Array.isArray(BY_DEPT[f]) && BY_DEPT[f].includes(k)) ? '' : 'none';
           topconn.classList.add('focus');
+          const chipColor = (DEPTS[f] && DEPTS[f].chip) || '#8FD3F4';
+          const deptShort = (DEPTS[f] && DEPTS[f].short) || f;
           topconn.querySelector('.tc-lab').innerHTML =
-            `<span class="dot" style="background:${DEPTS[f].chip}"></span>${DEPTS[f].short} · CONNECTED TO`;
+            `<span class="dot" style="background:${chipColor}"></span>${deptShort} · CONNECTED TO`;
         }
       } else {
         topconn.style.opacity = wireA;
@@ -383,7 +393,7 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
       // branch fan: one drop per logo → junction under the cluster; trunk: junction → port.
       // junction depths are staggered per dept so neighbouring fans don't overlap.
       // gmail is EXCLUDED from every fan — it feeds the junctions via its own loom below
-      const xs = BY_DEPT[dept].filter(k => !SHARED[k]).map(k => {
+      const xs = (BY_DEPT[dept] || []).filter(k => !SHARED[k] && topImgs[k]).map(k => {
         const r = topImgs[k].getBoundingClientRect();
         return (r.left + r.right) / 2;
       });
