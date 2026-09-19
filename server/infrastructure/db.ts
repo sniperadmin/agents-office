@@ -347,8 +347,7 @@ export class Database {
   }
 
   public deleteDepartment(deptKey: string): { ok: boolean; removedAgents: string[] } {
-    const CORE_DEPTS = ['exec', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale', 'brain'];
-    if (CORE_DEPTS.includes(deptKey)) {
+    if (deptKey === 'exec' || deptKey === 'executive' || deptKey === 'brain') {
       return { ok: false, removedAgents: [] };
     }
     this.db.prepare('DELETE FROM departments WHERE key = ?').run(deptKey);

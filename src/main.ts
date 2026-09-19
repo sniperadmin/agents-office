@@ -11,7 +11,13 @@ import { initMcp } from './mcp.ts';
 import { loadConnectors } from './connectors.ts';
 import { initTasks } from './tasks.ts';
 import { initBrain } from './brain.ts';
+import { initDeptManagerDomain } from './domains/departments/deptManager.ts';
+import { disposeHierarchy } from './graphics/SceneReconciler.ts';
+import { sseSync } from './core/SSESync.ts';
+import { store } from './core/Store.ts';
+import { events } from './core/EventBus.ts';
 let tasks = null; // V3 task boards — initialised after the rail constants exist
+let brain: any = null;
 
 /* ---------- renderer / scene / camera ---------- */
 const canvas = document.getElementById('scene');
@@ -124,6 +130,9 @@ const R = {};              // runtime per agent
 const deptRT = {};         // runtime per dept
 const screenSets = [];
 const DEPT_AZ = {};
+let darkOn = false;
+const DARK = { plinth: 0x2c2d2b, walkway: 0x303230, ground: 0x1b1c1a };
+function mix(hex: any, base: any, k: number) { const a = new THREE.Color(hex), b = new THREE.Color(base); return b.lerp(a, k); }
 const SWEEP_PERIOD = 16000; // ms per full orbit
 const COLS = { emails: 2, sales: 2, marketing: 2, ops: 2, fin: 2, delivery: 2 };
 
@@ -166,6 +175,7 @@ function buildDeptBadge(k) {
   const n = AGENTS.filter(a => a.dept === k).length;
   const b = document.createElement('div');
   b.className = 'badge';
+  b.dataset.dept = k;
   b.innerHTML = `
     <div class="b-name"><span class="dot" style="background:${dept.chip}"></span>${dept.short}<span class="live"></span></div>
     <div class="b-count">${k === 'brain' ? '<span class="b-num">∞</span><span class="b-lab">KNOWLEDGE</span>' : `<span class="b-num">${n}</span><span class="b-lab">AGENTS</span>`}</div>
@@ -206,6 +216,7 @@ function buildDeptBadge(k) {
 }
 
 function buildDeptPod(key_) {
+  if (key_ !== 'brain' && !DEPT_KEYS.includes(key_)) return null;
   if (deptRT[key_]) {
     const dim = getDeptDimensions(key_);
     if (deptRT[key_].L && (deptRT[key_].L.w !== dim.w || deptRT[key_].L.d !== dim.d)) {
@@ -273,7 +284,8 @@ function buildDeptPod(key_) {
 
 function buildAgent3D(a) {
   if (R[a.id]) return;
-  const dRT = deptRT[a.dept] || buildDeptPod(a.dept);
+  if (!DEPT_KEYS.includes(a.dept) && a.dept !== 'brain') return;
+  const dRT = deptRT[a.dept];
   if (!dRT) return;
   const dept = DEPTS[a.dept];
   const L = dRT.L;
@@ -410,8 +422,98 @@ function realignAllDepts() {
   }
 }
 
-function refresh3D() {
+function removeAgent3D(id) {
+  const r = R[id];
+  if (!r) return;
+  if (r.person) {
+    scene.remove(r.person);
+    disposeHierarchy(r.person);
+  }
+  if (r.station) {
+    scene.remove(r.station);
+    disposeHierarchy(r.station);
+  }
+  if (r.warn) {
+    scene.remove(r.warn);
+    disposeHierarchy(r.warn);
+  }
+  if (r.pill && r.pill.parentNode) {
+    r.pill.parentNode.removeChild(r.pill);
+  }
+  for (let i = personTargets.length - 1; i >= 0; i--) {
+    if ((personTargets[i].userData as any)?.agentId === id) {
+      personTargets.splice(i, 1);
+    }
+  }
+  delete R[id];
+}
+
+function removeDeptPod(key_) {
+  // First remove all seated agents of this department
+  const agentIds = Object.keys(R).filter(id => R[id]?.a?.dept === key_);
+  for (const id of agentIds) {
+    removeAgent3D(id);
+  }
+
+  const dRT = deptRT[key_];
+  if (dRT) {
+    if (dRT.group) {
+      scene.remove(dRT.group);
+      disposeHierarchy(dRT.group);
+    }
+    if (dRT.walkway) {
+      scene.remove(dRT.walkway);
+      disposeHierarchy(dRT.walkway);
+    }
+    if (dRT.plant) {
+      scene.remove(dRT.plant);
+      disposeHierarchy(dRT.plant);
+    }
+    if (dRT.badge && dRT.badge.parentNode) {
+      dRT.badge.parentNode.removeChild(dRT.badge);
+    }
+    delete deptRT[key_];
+    delete DEPT_AZ[key_];
+  }
+
+  document.querySelectorAll(`.badge[data-dept="${key_}"]`).forEach(el => el.remove());
+
+  for (let i = clickTargets.length - 1; i >= 0; i--) {
+    if ((clickTargets[i].userData as any)?.dept === key_) {
+      clickTargets.splice(i, 1);
+    }
+  }
+
+  for (let i = screenSets.length - 1; i >= 0; i--) {
+    if (screenSets[i].dept === key_) {
+      screenSets.splice(i, 1);
+    }
+  }
+
   realignAllDepts();
+}
+
+function refresh3D() {
+  const activeKeys = new Set(DEPT_KEYS);
+  // 1. Unmount pods for disbanded departments
+  for (const k of Object.keys(deptRT)) {
+    if (k !== 'brain' && !activeKeys.has(k)) {
+      removeDeptPod(k);
+    }
+  }
+
+  // 2. Unmount any agents no longer in active roster or whose dept is disbanded
+  const activeAgentIds = new Set(AGENTS.filter(a => activeKeys.has(a.dept)).map(a => a.id));
+  for (const id of Object.keys(R)) {
+    const r = R[id];
+    if (!activeAgentIds.has(id) || !activeKeys.has(r.a?.dept)) {
+      removeAgent3D(id);
+    }
+  }
+
+  realignAllDepts();
+
+  // 3. Build missing pods
   for (const k of DEPT_KEYS) {
     if (!deptRT[k]) {
       buildDeptPod(k);
@@ -422,33 +524,14 @@ function refresh3D() {
       }
     }
   }
+
+  // 4. Build missing agents ONLY for active departments
   for (const a of AGENTS) {
-    if (!R[a.id]) {
+    if (activeKeys.has(a.dept) && !R[a.id]) {
       buildAgent3D(a);
     }
   }
   realignAllDepts();
-}
-
-function removeDeptPod(key_) {
-  const dRT = deptRT[key_];
-  if (!dRT) return;
-  if (dRT.group) scene.remove(dRT.group);
-  if (dRT.walkway) scene.remove(dRT.walkway);
-  if (dRT.plant) scene.remove(dRT.plant);
-  if (dRT.badge && dRT.badge.parentNode) dRT.badge.parentNode.removeChild(dRT.badge);
-  delete deptRT[key_];
-  delete DEPT_AZ[key_];
-  realignAllDepts();
-}
-
-function removeAgent3D(id) {
-  const r = R[id];
-  if (!r) return;
-  if (r.person) scene.remove(r.person);
-  if (r.warn) scene.remove(r.warn);
-  if (r.pill && r.pill.parentNode) r.pill.parentNode.removeChild(r.pill);
-  delete R[id];
 }
 
 // Initial 3D pods & agents build
@@ -456,7 +539,6 @@ for (const key_ of [...DEPT_KEYS, 'brain']) buildDeptPod(key_);
 for (const a of AGENTS) buildAgent3D(a);
 
 // brain centre
-let brain;
 {
   const bg = deptRT.brain.group;
   brain = initBrain({ scene, brainGroup: bg, getR: () => R, esc: (t) => esc(t), hud, toScreen: (p) => toScreen(p), getCamera: () => camera });
@@ -687,9 +769,6 @@ function setCam(on) { document.body.classList.toggle('cam', !!on); }
 // DARK MODE (AJ, 6 Sep 2026: "make another one in dark mode as I will show both"): D toggles, #dark=1
 // forces it, /dark on the server opens in it. The chrome follows the CSS tokens; the scene
 // re-tints its shared materials (plinths, floors, walkways), relights, and the Brain/wires swap ink.
-let darkOn = false;
-const DARK = { plinth: 0x2c2d2b, walkway: 0x303230, ground: 0x1b1c1a };
-function mix(hex, base, k) { const a = new THREE.Color(hex), b = new THREE.Color(base); return b.lerp(a, k); }
 function setDark(on) {
   darkOn = !!on;
   document.body.classList.toggle('dark', darkOn);
@@ -753,9 +832,10 @@ const SCREEN_RIGHT = new THREE.Vector3(1, 0, -1).normalize();
 
 function ensureChat(id) {
   if (chatHist[id]) return;
-  const v = R[id].v1;
+  const r = R[id];
+  const v = r?.v1 || { greeting: `Hello, I am ${id}.` };
   chatHist[id] = [
-    { who: 'agent', text: v.greeting },
+    { who: 'agent', text: v.greeting || 'Hello.' },
     { who: 'work', i: '⏺', text: 'session attached — live work stream below' },
   ];
   if (FILE_GEN[id] && !(tasks && tasks.isLive())) chatHist[id].push({ who: 'file', ...FILE_GEN[id]() }); // demo-only sample file; a live office shows real deliverables
@@ -768,6 +848,7 @@ function chatPush(id, msg) {
 }
 function renderChat(id) {
   const r = R[id];
+  if (!chatHist[id]) return;
   mMsgs.innerHTML = chatHist[id].map((m, i) => {
     if (m.who === 'agent') return `<div class="m-agent">${esc(m.text)}</div>`;
     if (m.who === 'user') return `<div class="m-user">${esc(m.text)}</div>`;
@@ -797,18 +878,20 @@ function renderChat(id) {
   mMsgs.scrollTop = mMsgs.scrollHeight;
 }
 function renderActivity(id) {
-  const r = R[id], v = r.v1;
+  const r = R[id];
+  if (!r) return;
+  const v = r.v1 || {};
   const task = rnd(v.tasks || ['Working through the queue'])
     .replace('{co}', rnd(P.co)).replace('{person}', person()).replace('{count}', ri(3, 9));
   document.getElementById('mNow').innerHTML = `NOW &nbsp;<b>${esc(task)}</b>`;
   document.getElementById('mStats').innerHTML = (v.stats || []).map(([l, val]) => `
     <div class="st"><div class="st-l">${esc(l)}</div><div class="st-v">${esc(String(typeof val === 'function' ? val() : val))}</div></div>`).join('');
-  const chip = DEPTS[r.a.dept].chip;
+  const chip = DEPTS[r.a?.dept]?.chip || '#8FD3F4';
   const mx = Math.max(...(v.chart || [1]));
   document.querySelector('#mChart .ch-lbl').textContent = v.chartLbl || '';
   document.querySelector('#mChart .ch-bars').innerHTML = (v.chart || []).map(n =>
     `<i style="height:${Math.round(n / mx * 100)}%;background:${chip}"></i>`).join('');
-  document.getElementById('mFeed').innerHTML = r.feed.map(f => `
+  document.getElementById('mFeed').innerHTML = (r.feed || []).map(f => `
     <div class="fe"><span class="fi">${f.i}</span><span>${esc(f.text)}</span><span class="ft">${ago(f.ts)}</span></div>`).join('');
 }
 /* camera target offset so the pod sits beside the rail, not behind it */
@@ -925,41 +1008,56 @@ function flyBillboardIntoRail(k) {
 }
 function openAgentRail(id, tab = 'chat', fly = true) {
   const r = R[id];
+  if (!r) return;
   ensureChat(id);
   modalOpen = id;
-  const dept = DEPTS[r.a.dept];
-  document.querySelector('#railAgent .mh-dot').style.background = dept.chip;
-  document.querySelector('#railAgent .mh-name').innerHTML =
-    (r.a.lead ? '<span class="star">★ </span>' : '') + r.a.name;
-  document.querySelector('#railAgent .mh-role').textContent = `${r.v1.role} · ${dept.name}`;
-  document.querySelector('#railAgent .mh-tag').textContent = r.v1.tagline;
-  document.getElementById('mChips').innerHTML = (r.v1.chips || []).map(c =>
-    `<button>${esc(c)}</button>`).join('');
-  document.getElementById('mChips').querySelectorAll('button').forEach(b =>
-    b.addEventListener('click', () => sendChat(b.textContent)));
+  const dept = DEPTS[r.a?.dept] || { chip: '#888', name: r.a?.dept || 'Team' };
+  const dot = document.querySelector('#railAgent .mh-dot');
+  if (dot) dot.style.background = dept.chip;
+  const nameEl = document.querySelector('#railAgent .mh-name');
+  if (nameEl) {
+    nameEl.innerHTML = (r.a?.lead ? '<span class="star">★ </span>' : '') + (r.a?.name || id);
+  }
+  const roleEl = document.querySelector('#railAgent .mh-role');
+  if (roleEl) roleEl.textContent = `${r.v1?.role || r.a?.role || 'Agent'} · ${dept.name}`;
+  const tagEl = document.querySelector('#railAgent .mh-tag');
+  if (tagEl) tagEl.textContent = r.v1?.tagline || r.a?.bio || '';
+  const chipsEl = document.getElementById('mChips');
+  if (chipsEl) {
+    chipsEl.innerHTML = (r.v1?.chips || []).map(c =>
+      `<button>${esc(c)}</button>`).join('');
+    chipsEl.querySelectorAll('button').forEach(b =>
+      b.addEventListener('click', () => sendChat(b.textContent)));
+  }
   rail.classList.add('agentOpen');
   setTab(tab);
   if (tasks && tasks.railFor) tasks.railFor(id); // V3.5: the agent's routines strip
-  if (fly) { const t = focusTarget(r.a.dept, r.seat); flyTo(t.pos, t.zoom, 500); }
+  if (fly && r.seat && focusTarget) {
+    const t = focusTarget(r.a?.dept, r.seat);
+    if (t) flyTo(t.pos, t.zoom, 500);
+  }
 }
 // V3: the board opening/closing re-centres the pod without leaving focus
 function reframe() {
   if (!focused || focused === 'brain' || modalOpen) return;
   const t = focusTarget(focused);
-  flyTo(t.pos, t.zoom, 600);
+  if (t) flyTo(t.pos, t.zoom, 600);
 }
 function railBack() { // V3.4: "back" = back to the pod view, chat stays on the lead
   if (!focused || focused === 'brain') return;
   const lead = AGENTS.find(x => x.dept === focused && x.lead) || AGENTS.find(x => x.dept === focused);
+  if (!lead || !R[lead.id]) return;
   openAgentRail(lead.id, 'chat', false);
   const t = focusTarget(focused);
-  flyTo(t.pos, t.zoom, 500);
+  if (t) flyTo(t.pos, t.zoom, 500);
 }
 document.getElementById('railBack').addEventListener('click', railBack);
 let pendingTab = 'chat';
 // compat entry point (person clicks, pills, CC export): route through focus mode
 function openAgent(id, tab = 'chat') {
-  const dept = R[id].a.dept;
+  const r = R[id];
+  if (!r) return;
+  const dept = r.a?.dept;
   if (focused === dept) { openAgentRail(id, tab); return; }
   pendingTab = tab;
   enterFocus(dept, id);
@@ -1006,8 +1104,8 @@ function sendChat(text) {
         .catch(e => chatPush(id, { who: 'agent', text: `I couldn't reach the AI engine (${e.message}).` }));
       return;
     }
-    const hit = (r.v1.chat || []).find(c => c.k.some(k => low.includes(k)));
-    const reply = hit ? rnd(hit.r) : rnd(r.v1.fallback || ['On it.']);
+    const hit = ((r.v1 && r.v1.chat) || []).find(c => c.k.some(k => low.includes(k)));
+    const reply = hit ? rnd(hit.r) : rnd((r.v1 && r.v1.fallback) || ['On it.']);
     chatPush(id, { who: 'agent', text: reply });
   }, 450 + Math.random() * 500);
 }
@@ -1171,22 +1269,36 @@ function weightedEv(evs) {
   return evs[0];
 }
 function fireAgentEvent(seedTs) {
-  const ids = Object.keys(R).filter(id => R[id].v1 && R[id].v1.ev && R[id].state !== 'stuck');
+  let ids = Object.keys(R).filter(id => R[id]?.v1?.ev && R[id].state !== 'stuck');
+  if (!ids.length) ids = Object.keys(R).filter(id => R[id]?.state !== 'stuck');
+  if (!ids.length) return;
   const r = R[ids[Math.floor(Math.random() * ids.length)]];
-  const ev = weightedEv(r.v1.ev);
-  const text = ev.t();
-  r.feed.unshift({ i: ev.i, text, ts: seedTs || Date.now() });
+  if (!r) return;
+  let i = '💡', text = 'Reviewing department operations';
+  let ev = null;
+  if (r.v1?.ev?.length) {
+    ev = weightedEv(r.v1.ev);
+    if (ev) {
+      i = ev.i;
+      text = typeof ev.t === 'function' ? ev.t() : (ev.text || text);
+    }
+  } else {
+    text = `Reviewing ${r.a?.name || 'executive'} deliverables`;
+  }
+  r.feed.unshift({ i, text, ts: seedTs || Date.now() });
   if (r.feed.length > 30) r.feed.pop();
   if (!seedTs) {
-    spawnEmote(r, ev.i); // real work events pop their icon over the desk
-    mcp.onAgentEvent(r.a.id, r.a.dept, r.seat, performance.now()); // tool tile pulses + packet beam
-    if (focused === r.a.dept) { // live-update the rail activity row
-      const line = document.querySelector(`[data-line="${r.a.id}"]`);
-      if (line) line.textContent = ev.i + ' ' + text;
+    spawnEmote(r, i); // real work events pop their icon over the desk
+    if (mcp && mcp.onAgentEvent && r.a && r.seat) {
+      mcp.onAgentEvent(r.a.id, r.a.dept, r.seat, performance.now()); // tool tile pulses + packet beam
     }
-    if (chatHist[r.a.id]) chatPush(r.a.id, { who: 'work', i: ev.i, text });
-    if (ev.kpi) { const k = KPIS.find(x => x.id === ev.kpi.id); if (k) k.val += ev.kpi.n; }
-    const d = r.a.dept, roll = Math.random();
+    if (r.a && focused === r.a.dept) { // live-update the rail activity row
+      const line = document.querySelector(`[data-line="${r.a.id}"]`);
+      if (line) line.textContent = i + ' ' + text;
+    }
+    if (r.a && chatHist[r.a.id]) chatPush(r.a.id, { who: 'work', i, text });
+    if (ev && ev.kpi) { const k = KPIS.find(x => x.id === ev.kpi.id); if (k) k.val += ev.kpi.n; }
+    const d = r.a?.dept, roll = Math.random();
     if (d === 'emails') { if (roll < 0.45) STATS.emailsSent++; else if (roll < 0.7) STATS.drafts++; }
     else if (d === 'delivery' && roll < 0.2) STATS.reports++;
     else if (d === 'sales') {
@@ -1200,9 +1312,11 @@ function fireAgentEvent(seedTs) {
     }
     else if (d === 'ops' && roll < 0.22) STATS.insOps++;
     else if (d === 'fin' && roll < 0.3) STATS.billsPaid++;
-    if (ev.brain || Math.random() < 0.12) { if (brain) brain.state.notes++; brain.read(r.a.id); } // the Brain shows the read
+    if (ev && (ev.brain || Math.random() < 0.12)) {
+      if (brain) { brain.state.notes++; if (r.a) brain.read(r.a.id); }
+    } // the Brain shows the read
     updateBillboards();
-    if (modalOpen === r.a.id && modalTab === 'activity') renderActivity(r.a.id);
+    if (r.a && modalOpen === r.a.id && modalTab === 'activity') renderActivity(r.a.id);
   }
 }
 // seed a believable history so Activity isn't empty at boot
@@ -1216,12 +1330,21 @@ let nextMetricAt = performance.now() + 3000;
 let nextEmoteAt = performance.now() + 2000;
 
 function planMeeting(now) {
-  const ids = Object.keys(R).filter(id => R[id].state === 'working');
+  const ids = Object.keys(R).filter(id => R[id]?.state === 'working');
+  if (ids.length < 2) return;
+  const depts = new Set(ids.map(id => R[id]?.a?.dept).filter(Boolean));
+  if (depts.size < 2) return;
   const a = R[ids[Math.floor(Math.random() * ids.length)]];
+  if (!a) return;
   let b = a;
-  while (b.a.dept === a.a.dept) b = R[ids[Math.floor(Math.random() * ids.length)]];
+  let attempts = 0;
+  while ((!b || b.a?.dept === a.a?.dept) && attempts++ < 30) {
+    b = R[ids[Math.floor(Math.random() * ids.length)]];
+  }
+  if (!b || b.a?.dept === a.a?.dept) return;
   for (const [i, r] of [a, b].entries()) {
-    const d = deptRT[r.a.dept];
+    const d = deptRT[r.a?.dept];
+    if (!d || !d.gate || !d.brainGate) continue;
     const stand = new THREE.Vector3(2 + (i ? 3.4 : -3.4), 0.12, 2 + 2.6);
     r.path = [r.seat.clone(), d.gate.clone().setY(0.12), d.brainGate.clone().setY(0.12), stand];
     r.pathI = 0; r.state = 'walking';
@@ -1537,12 +1660,21 @@ function applyRoster(agents) {
 tasks = initTasks({
   hud, R, deptRT, RAIL_SIDE, spawnEmote, chatPush, chatHist, feedPush, zoomToApproval, enterFocus, openAgent, esc,
   brainWrite: (id, title) => brain.write(id, title), brain,
-  onLive: (h) => { document.querySelector('#topbar .brand .ver').textContent = 'BETA'; document.title = `${h.name} — Agents Office`; brain.setOwner(h.name); brain.setQuiet(true); applyRoster(h.agents); },
+  onLive: (h) => {
+    document.querySelector('#topbar .brand .ver').textContent = 'BETA';
+    document.title = `${h.name} — Agents Office`;
+    brain.setOwner(h.name);
+    brain.setQuiet(true);
+    if (h.depts && tasks && tasks.syncDepartments) tasks.syncDepartments({ keys: h.depts });
+    if (h.agents && tasks && tasks.syncAgents) tasks.syncAgents(h.agents);
+    applyRoster(h.agents);
+    refresh3D();
+  },
   onTools: (agentId, keys) => mcp.onToolsUsed(agentId, keys),
   requestApproval, setStuck: setStuckLive,
   onUsage: (u) => { if (mcp && mcp.setUsage) mcp.setUsage(u); }, // V3.6: the plan's gauge in the top bar
   getFocused: () => focused, getZoom: () => view.zoom, getFocusDim: () => focusDim,
-  toScreen: (p) => toScreen(p), reframe, refresh3D, removeDeptPod, removeAgent3D,
+  toScreen: (p) => toScreen(p), reframe, refresh3D, removeDeptPod, removeAgent3D, buildAgent3D,
 });
 view.target.set(...overviewPos());
 addEventListener('resize', () => { if (!focused && !tween) view.target.set(...overviewPos()); });
@@ -1573,361 +1705,116 @@ resize();
 }
 window.CC = { flyTo, zoomToDept, zoomOut, zoomToApproval, requestApproval, openAgent, view, applyCamera, R, emotes,
   setCam, setDark, brain, connectorReveal: () => mcp.startReveal(performance.now()),
-  toggleBoard: () => tasks.toggle(), addTask: (agentId, title) => tasks.addTask(agentId, title), tasks, routines: () => tasks.routines };
+  toggleBoard: () => tasks.toggle(), addTask: (agentId, title) => tasks.addTask(agentId, title), tasks, routines: () => tasks.routines,
+  refresh3D, resetMeshCache: async () => { await syncInitialStateFromApi(); refresh3D(); return true; },
+  deptRT, DEPT_KEYS, DEPTS, AGENTS };
 
-const RESERVE_TEMPLATES = [
-  {
-    key: 'dev',
-    name: 'DEVELOPMENT',
-    leadName: 'DEV LEAD',
-    chip: '#3B82F6',
-    model: 'antigravity-flash',
-    desc: 'Full-stack, Frontend, Backend, Mobile & Web3 Software Engineering',
-    skills: '45+ Specialized Dev Skills',
-    roles: ['Backend Architect', 'Frontend Dev', 'Mobile Builder', 'Solidity Engineer', '3D Specialist']
-  },
-  {
-    key: 'design',
-    name: 'DESIGN & UI/UX',
-    leadName: 'DESIGN LEAD',
-    chip: '#EC4899',
-    model: 'antigravity-flash',
-    desc: 'UI/UX Systems, Visual Identity, Brand Strategy & Spatial Interfaces',
-    skills: '25+ Design & UX Skills',
-    roles: ['UI Designer', 'UX Architect', 'UX Researcher', 'Brand Guardian', 'Whimsy Injector']
-  },
-  {
-    key: 'devops',
-    name: 'DEVOPS & CLOUD',
-    leadName: 'DEVOPS LEAD',
-    chip: '#10B981',
-    model: 'antigravity-flash',
-    desc: 'Cloud Infrastructure, SRE, Git Workflows & Database Optimization',
-    skills: '25+ DevOps & Infra Skills',
-    roles: ['DevOps Automator', 'Site Reliability Engineer', 'Cloud Security Architect', 'DB Optimizer']
-  },
-  {
-    key: 'product_qa',
-    name: 'PRODUCT & QA',
-    leadName: 'PRODUCT & QA LEAD',
-    chip: '#F59E0B',
-    model: 'antigravity-flash',
-    desc: 'Agile Sprint Planning, API Testing, Model QA & Accessibility Audits',
-    skills: '30+ Product & QA Skills',
-    roles: ['Sprint Prioritizer', 'API Tester', 'Model QA Auditor', 'Accessibility Specialist']
-  },
-  {
-    key: 'sec',
-    name: 'CYBERSECURITY',
-    leadName: 'SECURITY LEAD',
-    chip: '#EF4444',
-    model: 'antigravity-flash',
-    desc: 'Application Security, Threat Detection, Pen Testing & Incident Response',
-    skills: '20+ Security & AppSec Skills',
-    roles: ['AppSec Engineer', 'Penetration Tester', 'Threat Detection Specialist', 'Data Privacy Officer']
-  },
-  {
-    key: 'growth',
-    name: 'GROWTH & ANALYTICS',
-    leadName: 'GROWTH LEAD',
-    chip: '#8B5CF6',
-    model: 'antigravity-flash',
-    desc: 'Data Engineering, AEO/GEO Citations, Search Optimization & Growth Hacking',
-    skills: '35+ Growth & Data Skills',
-    roles: ['Growth Hacker', 'Analytics Reporter', 'AI Citation Strategist', 'Data Engineer']
-  },
-  {
-    key: 'legal_fin',
-    name: 'LEGAL & FINANCE',
-    leadName: 'LEGAL & FIN LEAD',
-    chip: '#64748B',
-    model: 'antigravity-flash',
-    desc: 'Legal Document Review, Intake, Accounts Payable & Deal Strategy',
-    skills: '20+ Legal & Financial Skills',
-    roles: ['Legal Doc Reviewer', 'Legal Client Intake', 'Accounts Payable Agent', 'Finance Tracker']
-  },
-  {
-    key: 'support',
-    name: 'CUSTOMER SUPPORT',
-    leadName: 'SUPPORT LEAD',
-    chip: '#14B8A6',
-    model: 'antigravity-flash',
-    desc: 'Multi-Channel Customer Service, Ticket Escalation & Client Success',
-    skills: '20+ Support & Service Skills',
-    roles: ['Support Responder', 'Customer Service Specialist', 'Client Success Manager']
-  },
-  {
-    key: 'marketing',
-    name: 'MARKETING',
-    leadName: 'MARKETING LEAD',
-    chip: '#E6A15C',
-    model: 'antigravity-flash',
-    desc: 'Cross-platform content matrix, paid social, organic positioning & copy',
-    skills: '15+ Marketing Skills',
-    roles: ['Marketing Head', 'Short-Form Specialist', 'LinkedIn Writer', 'Paid Ads']
-  },
-  {
-    key: 'sales',
-    name: 'SALES',
-    leadName: 'SALES LEAD',
-    chip: '#D8C376',
-    model: 'antigravity-flash',
-    desc: 'High-conversion funnel architecture, VSL scripting, quotes & outreach',
-    skills: '15+ Sales Skills',
-    roles: ['Sales Head', 'Funnel Architect', 'VSL Builder', 'Sales Scripter']
-  },
-  {
-    key: 'nurture',
-    name: 'NURTURE',
-    leadName: 'NURTURE LEAD',
-    chip: '#5ADEB7',
-    model: 'antigravity-flash',
-    desc: 'Email copywriting, lead magnet design & audience retention flows',
-    skills: '10+ Nurture Skills',
-    roles: ['Nurture Head', 'Email Copywriter', 'Lead Magnet Designer', 'Show-Rate Ops']
-  },
-  {
-    key: 'launch',
-    name: 'LAUNCH',
-    leadName: 'LAUNCH LEAD',
-    chip: '#C48A5A',
-    model: 'antigravity-flash',
-    desc: 'Campaign launch management, post-launch analytics & QA check-ins',
-    skills: '10+ Launch Skills',
-    roles: ['Launch Head', 'Launch Manager', 'Post-Launch Analyst', 'Quality Assurance']
-  },
-  {
-    key: 'partnerships',
-    name: 'PARTNERSHIPS',
-    leadName: 'PARTNERSHIPS LEAD',
-    chip: '#9B9BE6',
-    model: 'antigravity-flash',
-    desc: 'Joint venture outreach, affiliate program design & referral networks',
-    skills: '10+ Partnership Skills',
-    roles: ['Partnerships Head', 'JV Outreach', 'Affiliate Architect', 'Referral Designer']
-  },
-  {
-    key: 'scale',
-    name: 'SCALE',
-    leadName: 'SCALE LEAD',
-    chip: '#A580D8',
-    model: 'antigravity-flash',
-    desc: 'SOP automation, competitor analysis, client success & revenue modeling',
-    skills: '12+ Scale Skills',
-    roles: ['Scale Head', 'SOP Builder', 'Competitor Analyst', 'Client Success']
-  },
-  {
-    key: 'foundations',
-    name: 'FOUNDATIONS',
-    leadName: 'FOUNDATIONS HEAD',
-    chip: '#4A5568',
-    model: 'antigravity-flash',
-    desc: 'ICP building, niche selection, offer architecture & financial modeling',
-    skills: '12+ Foundations Skills',
-    roles: ['Foundations Head', 'ICP Builder', 'Offer Architect', 'Financial Modeler']
-  }
-];
+// Department Manager (Domain Driven Module)
+initDeptManagerDomain({ DEPT_KEYS, DEPTS, tasks, refresh3D });
 
-function initDeptManager() {
-  const btn = document.getElementById('deptManagerBtn');
-  const modal = document.getElementById('deptModal');
-  const closeBtn = document.getElementById('deptModalClose');
-  const container = document.getElementById('deptListContainer');
-  const reserveContainer = document.getElementById('reserveTeamsContainer');
-  const form = document.getElementById('newDeptForm');
+// Synchronize initial state from DB if live HTTP
+async function syncInitialStateFromApi() {
+  if (typeof window === 'undefined' || !window.location.protocol.startsWith('http')) return;
+  try {
+    const res = await fetch('/api/departments');
+    if (!res.ok) return;
+    const data = await res.json();
+    const activeKeys = data.keys || data.coreDepts || (data.depts ? Object.keys(data.depts) : null);
+    if (!activeKeys || !Array.isArray(activeKeys)) return;
 
-  if (!btn || !modal) return;
-  modal.addEventListener('wheel', (e) => { e.stopPropagation(); }, { passive: true });
+    DEPT_KEYS.length = 0;
+    DEPT_KEYS.push(...activeKeys);
 
-  function renderDepts(deptsData) {
-    if (!container) return;
-    const depts = deptsData.depts || deptsData.departments || {};
-    const keys = deptsData.keys || deptsData.coreDepts || DEPT_KEYS;
-
-    // Render Active Departments
-    container.innerHTML = keys.map(k => {
-      const d = depts[k] || { name: k.toUpperCase(), chip: '#8FD3F4', ink: '#2E86AB', model: '' };
-      const isDisbandable = k !== 'exec' && k !== 'executive';
-      return `
-        <div class="dept-card">
-          <div style="display: flex; align-items: center; justify-content: space-between;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="width: 10px; height: 10px; border-radius: 50%; background: ${d.chip || '#8FD3F4'}; display: inline-block;"></span>
-              <span style="font-weight: 700; font-size: 11px; letter-spacing: 0.1em;">${d.name || k.toUpperCase()}</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 9px; color: var(--grey); letter-spacing: 0.1em;">KEY: ${k}</span>
-              ${isDisbandable 
-                ? `<button data-disband="${k}" class="dept-disband-btn" style="background:#e6939322; color:#C46060; border:1px solid #C4606044; border-radius:4px; padding:2px 8px; font-size:9px; font-weight:700; cursor:pointer;" title="Stand down team and send to reserve">STAND DOWN</button>` 
-                : `<span style="font-size: 8.5px; font-weight: 700; color: #E6A15C; background: rgba(230,161,92,0.1); padding: 2px 6px; border-radius: 4px;">CORE EXEC</span>`
-              }
-            </div>
-          </div>
-          <div style="margin-top: 6px;">
-            <label style="font-size: 8.5px; color: var(--grey); letter-spacing: 0.1em; text-transform: uppercase;">Assigned AI Model:</label>
-            <select data-dept="${k}" class="dept-model-select dept-select">
-              <option value="" ${!d.model ? 'selected' : ''}>Office Default (Antigravity Flash)</option>
-              <option value="antigravity-flash" ${d.model === 'antigravity-flash' ? 'selected' : ''}>Antigravity Flash 3.6</option>
-              <option value="antigravity-pro" ${d.model === 'antigravity-pro' ? 'selected' : ''}>Antigravity Pro 3.5</option>
-              <option value="antigravity-thinking" ${d.model === 'antigravity-thinking' ? 'selected' : ''}>Antigravity Thinking 3.1</option>
-              <option value="sonnet" ${d.model === 'sonnet' ? 'selected' : ''}>Sonnet</option>
-              <option value="opus" ${d.model === 'opus' ? 'selected' : ''}>Opus</option>
-              <option value="fable" ${d.model === 'fable' ? 'selected' : ''}>Fable</option>
-              <option value="hermes-3-70b" ${d.model === 'hermes-3-70b' ? 'selected' : ''}>Hermes 3 (70B)</option>
-            </select>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    // Render Reserve Teams Catalog
-    if (reserveContainer) {
-      reserveContainer.innerHTML = RESERVE_TEMPLATES.map(t => {
-        const isActive = keys.includes(t.key);
-        return `
-          <div class="reserve-card ${isActive ? 'active' : ''}">
-            <div>
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span style="width: 10px; height: 10px; border-radius: 50%; background: ${t.chip}; display: inline-block;"></span>
-                  <span style="font-weight: 700; font-size: 12px; letter-spacing: 0.05em; color: var(--ink);">${t.name}</span>
-                </div>
-                ${isActive 
-                  ? `<span class="reserve-status-badge active">✓ ACTIVE</span>`
-                  : `<span class="reserve-status-badge">RESERVE</span>`
-                }
-              </div>
-              <div style="font-size: 10.5px; color: var(--grey); line-height: 1.3; margin-bottom: 6px;">${t.desc}</div>
-              <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;">
-                <span class="reserve-skill-tag">${t.skills}</span>
-                ${t.roles.map(r => `<span class="reserve-role-pill">${r}</span>`).join('')}
-              </div>
-            </div>
-            <div>
-              ${isActive 
-                ? `<button data-disband="${t.key}" class="dept-disband-btn" style="width: 100%; padding: 6px 12px; border-radius: 8px; font-size: 10px; font-weight: 700; cursor: pointer;">DEACTIVATE / STAND DOWN</button>`
-                : `<button data-activate-key="${t.key}" class="reserve-activate-btn">⚡ ACTIVATE TEAM (1-CLICK)</button>`
-              }
-            </div>
-          </div>
-        `;
-      }).join('');
+    for (const k of Object.keys(DEPTS)) {
+      if (!activeKeys.includes(k) && k !== 'brain') {
+        delete DEPTS[k];
+      }
+    }
+    if (data.depts) {
+      for (const k of activeKeys) {
+        if (data.depts[k]) {
+          DEPTS[k] = {
+            name: data.depts[k].name || k.toUpperCase(),
+            short: data.depts[k].short || data.depts[k].name || k.toUpperCase(),
+            chip: data.depts[k].chip || '#8FD3F4',
+            ink: data.depts[k].ink || '#2E86AB',
+            floor: data.depts[k].floor || '#E6F4FB'
+          };
+        }
+      }
     }
 
-    // Attach listeners for activate buttons
-    modal.querySelectorAll('.reserve-activate-btn').forEach(b => {
-      b.addEventListener('click', async (e) => {
-        const key = e.target.getAttribute('data-activate-key');
-        const tmpl = RESERVE_TEMPLATES.find(t => t.key === key);
-        if (!tmpl) return;
+    // Immediately prune AGENTS to active departments
+    const activeSet = new Set(activeKeys);
+    for (let i = AGENTS.length - 1; i >= 0; i--) {
+      if (!activeSet.has(AGENTS[i].dept)) {
+        AGENTS.splice(i, 1);
+      }
+    }
+    refresh3D();
 
-        try {
-          const res = await fetch('/api/departments', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name: tmpl.name, key: tmpl.key, leadName: tmpl.leadName, model: tmpl.model, chip: tmpl.chip, roles: tmpl.roles })
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (tasks && tasks.syncDepartments) tasks.syncDepartments(data);
-            if (tasks && tasks.syncAgents) tasks.syncAgents(data.agents);
-            refresh3D();
-            loadDepts();
-          }
-        } catch (err) { console.error('Could not activate reserve team:', err); }
-      });
-    });
-
-    container.querySelectorAll('.dept-disband-btn').forEach(b => {
-      b.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const k = e.target.getAttribute('data-disband');
-        if (confirm(`Are you sure you want to disband department ${k.toUpperCase()}? All agents in this department will be removed.`)) {
-          if (tasks && tasks.disbandDepartment) {
-            await tasks.disbandDepartment(k);
-            loadDepts();
-          }
-        }
-      });
-    });
-
-    if (reserveContainer) {
-      reserveContainer.querySelectorAll('.dept-disband-btn').forEach(b => {
-        b.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const k = e.target.getAttribute('data-disband');
-          if (confirm(`Are you sure you want to deactivate department ${k.toUpperCase()}?`)) {
-            if (tasks && tasks.disbandDepartment) {
-              await tasks.disbandDepartment(k);
-              loadDepts();
+    try {
+      const aRes = await fetch('/api/agents');
+      if (aRes.ok) {
+        const aData = await aRes.json();
+        const serverAgents = (aData.agents || []).filter((a: any) => activeKeys.includes(a.department || a.dept));
+        if (serverAgents.length > 0) {
+          const sIds = new Set(serverAgents.map((a: any) => a.id));
+          for (let i = AGENTS.length - 1; i >= 0; i--) {
+            if (!sIds.has(AGENTS[i].id) || !activeKeys.includes(AGENTS[i].dept)) {
+              AGENTS.splice(i, 1);
             }
           }
-        });
-      });
-    }
-
-    container.querySelectorAll('.dept-model-select').forEach(sel => {
-      sel.addEventListener('change', async (e) => {
-        const k = e.target.getAttribute('data-dept');
-        const model = e.target.value;
-        const cur = depts[k] || {};
-        await fetch('/api/departments', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ key: k, name: cur.name, chip: cur.chip, ink: cur.ink, model })
-        });
-      });
-    });
-  }
-
-  async function loadDepts() {
-    try {
-      const res = await fetch('/api/departments');
-      if (res.ok) {
-        const data = await res.json();
-        renderDepts(data);
-      }
-    } catch (e) { console.warn('Could not load departments:', e); }
-  }
-
-  btn.addEventListener('click', () => {
-    modal.classList.add('on');
-    modal.style.display = 'flex';
-    loadDepts();
-  });
-
-  if (closeBtn) closeBtn.addEventListener('click', () => { modal.classList.remove('on'); modal.style.display = 'none'; });
-  addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display !== 'none') { modal.classList.remove('on'); modal.style.display = 'none'; } });
-
-  if (form) {
-    form.addEventListener('submit', async e => {
-      e.preventDefault();
-      const name = document.getElementById('ndName').value;
-      const key = document.getElementById('ndKey').value;
-      const leadName = document.getElementById('ndLead').value;
-      const model = document.getElementById('ndModel').value;
-      const chip = document.getElementById('ndChip').value;
-
-      try {
-        const res = await fetch('/api/departments', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name, key, leadName, model, chip })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          form.reset();
-          if (tasks && tasks.syncDepartments) tasks.syncDepartments(data);
-          if (tasks && tasks.syncAgents) tasks.syncAgents(data.agents);
+          for (const sa of serverAgents) {
+            let existing = AGENTS.find(x => x.id === sa.id);
+            if (!existing) {
+              AGENTS.push({
+                id: sa.id,
+                name: sa.name || sa.id.toUpperCase(),
+                dept: sa.department || sa.dept || 'exec',
+                lead: !!sa.lead,
+                grid: [0.5, 0] as [number, number],
+                hair: '#1f1f1f',
+                skin: '#F0C9A0',
+                role: sa.role || '',
+                does: sa.does || '',
+                tools: sa.tools || [],
+                brief: sa.brief || ''
+              });
+            } else {
+              Object.assign(existing, { name: sa.name, role: sa.role, does: sa.does, tools: sa.tools, brief: sa.brief, dept: sa.department || sa.dept, lead: sa.lead });
+            }
+          }
           refresh3D();
-          loadDepts();
-          alert(`Department ${name} created successfully!`);
         }
-      } catch (err) { console.error(err); }
-    });
+      }
+    } catch {}
+
+    if (tasks && tasks.syncDepartments) {
+      tasks.syncDepartments(data);
+    }
+  } catch (e) {
+    console.warn('syncInitialStateFromApi error:', e);
   }
 }
-initDeptManager();
+syncInitialStateFromApi();
+
+// Real-time Event-Driven Synchronization (SSE / DB -> UI & 3D Scene)
+sseSync.start();
+events.on('DEPARTMENTS_UPDATED', (payload: any) => {
+  if (tasks && tasks.syncDepartments) tasks.syncDepartments(payload);
+  if (payload.agents && tasks && tasks.syncAgents) tasks.syncAgents(payload.agents);
+  refresh3D();
+});
+events.on('DEPARTMENT_DISBANDED', () => {
+  refresh3D();
+});
+events.on('AGENT_UPDATED', () => {
+  refresh3D();
+});
+events.on('AGENT_REMOVED', () => {
+  refresh3D();
+});
 
 function initMcpManager() {
   const topconn = document.getElementById('topconn');
@@ -2133,7 +2020,35 @@ initMcpManager();
 
 
 let last = performance.now();
+let fpsFrames = 0;
+let lastFpsTime = performance.now();
+let fpsValueEl: HTMLElement | null = null;
+let fpsDotEl: HTMLElement | null = null;
+
+function updateFps(now: number) {
+  fpsFrames++;
+  const delta = now - lastFpsTime;
+  if (delta >= 500) {
+    const fps = Math.round((fpsFrames * 1000) / delta);
+    fpsFrames = 0;
+    lastFpsTime = now;
+    if (!fpsValueEl) fpsValueEl = document.getElementById('fpsValue');
+    if (!fpsDotEl) fpsDotEl = document.getElementById('fpsDot');
+    if (fpsValueEl) fpsValueEl.textContent = `${fps} FPS`;
+    if (fpsDotEl) {
+      if (fps >= 50) {
+        fpsDotEl.style.background = '#10B981';
+      } else if (fps >= 30) {
+        fpsDotEl.style.background = '#F59E0B';
+      } else {
+        fpsDotEl.style.background = '#EF4444';
+      }
+    }
+  }
+}
+
 function loop(now) {
+  updateFps(now);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   tickTween(now);
   applyCamera();

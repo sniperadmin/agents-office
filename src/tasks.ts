@@ -115,7 +115,21 @@ function span(ms) { // "4 min" · "1 h 12 m" · "3 h"
   const h = Math.floor(m / 60), r = m % 60;
   return r ? `${h} h ${r} m` : `${h} h`;
 }
-const agentOf = id => AGENTS.find(a => a.id === id);
+const agentOf = (id: string) => {
+  const found = AGENTS.find(a => a.id === id);
+  if (found) return found;
+  return {
+    id: id || 'agent',
+    name: id ? id.toUpperCase() : 'AGENT',
+    dept: 'ops',
+    department: 'ops',
+    lead: false,
+    role: 'Specialist',
+    does: '',
+    tools: [] as string[],
+    brief: ''
+  };
+};
 const STATE_LABEL = { next: 'Backlog', doing: 'In progress', waiting: 'Waiting', done: 'Done', sched: 'Scheduled' };
 
 export function initTasks(ctx) {
@@ -340,17 +354,33 @@ export function initTasks(ctx) {
   function syncDepartments(deptsData: any) {
     if (!deptsData) return;
     const depts = deptsData.depts || deptsData.departments || {};
-    const keys = deptsData.keys || deptsData.coreDepts || [];
-    for (const k of keys) {
-      if (!DEPT_KEYS.includes(k)) DEPT_KEYS.push(k);
-      if (depts[k]) {
-        DEPTS[k] = {
-          name: depts[k].name || k.toUpperCase(),
-          short: depts[k].short || depts[k].name || k.toUpperCase(),
-          chip: depts[k].chip || '#8FD3F4',
-          ink: depts[k].ink || '#2E86AB',
-          floor: depts[k].floor || '#E6F4FB'
-        };
+    const keys = deptsData.keys || deptsData.coreDepts || Object.keys(depts);
+    if (Array.isArray(keys) && keys.length > 0) {
+      DEPT_KEYS.length = 0;
+      for (const k of keys) {
+        DEPT_KEYS.push(k);
+        if (depts[k]) {
+          DEPTS[k] = {
+            name: depts[k].name || k.toUpperCase(),
+            short: depts[k].short || depts[k].name || k.toUpperCase(),
+            chip: depts[k].chip || '#8FD3F4',
+            ink: depts[k].ink || '#2E86AB',
+            floor: depts[k].floor || '#E6F4FB'
+          };
+        }
+      }
+      for (const k of Object.keys(DEPTS)) {
+        if (!DEPT_KEYS.includes(k) && k !== 'brain') {
+          delete DEPTS[k];
+        }
+      }
+      const activeSet = new Set(DEPT_KEYS);
+      for (let i = AGENTS.length - 1; i >= 0; i--) {
+        if (!activeSet.has(AGENTS[i].dept)) {
+          const removedId = AGENTS[i].id;
+          AGENTS.splice(i, 1);
+          if (ctx && ctx.removeAgent3D) ctx.removeAgent3D(removedId);
+        }
       }
     }
     renderDeptMenu();
@@ -359,22 +389,37 @@ export function initTasks(ctx) {
 
   function syncAgents(agentsList: any[]) {
     if (!Array.isArray(agentsList)) return;
-    for (const a of agentsList) {
+    const activeKeys = new Set(DEPT_KEYS);
+    const activeAgentsList = agentsList.filter(a => activeKeys.has(a.department || a.dept));
+    const newIds = new Set(activeAgentsList.map(a => a.id));
+
+    // Remove agents no longer present in active roster or whose dept is inactive
+    for (let i = AGENTS.length - 1; i >= 0; i--) {
+      if (!newIds.has(AGENTS[i].id) || !activeKeys.has(AGENTS[i].dept)) {
+        const removedId = AGENTS[i].id;
+        AGENTS.splice(i, 1);
+        if (ctx && ctx.removeAgent3D) ctx.removeAgent3D(removedId);
+      }
+    }
+
+    for (const a of activeAgentsList) {
       let existing = AGENTS.find(x => x.id === a.id);
       if (!existing) {
-        AGENTS.push({
+        const newObj = {
           id: a.id,
           name: a.name || a.id.toUpperCase(),
           dept: a.department || a.dept || 'ops',
           lead: !!a.lead,
-          grid: [0.5, 0],
+          grid: [0.5, 0] as [number, number],
           hair: '#1f1f1f',
           skin: '#F0C9A0',
           role: a.role || '',
           does: a.does || '',
           tools: a.tools || [],
           brief: a.brief || ''
-        });
+        };
+        AGENTS.push(newObj);
+        if (ctx && ctx.buildAgent3D) ctx.buildAgent3D(newObj);
       } else {
         Object.assign(existing, { name: a.name, role: a.role, does: a.does, tools: a.tools, brief: a.brief, dept: a.department || a.dept, lead: a.lead });
       }
@@ -392,8 +437,8 @@ export function initTasks(ctx) {
         if (kIdx >= 0) DEPT_KEYS.splice(kIdx, 1);
         delete DEPTS[deptKey];
         if (ctx.removeDeptPod) ctx.removeDeptPod(deptKey);
-        syncAgents(data.agents);
         syncDepartments(data);
+        if (data.agents) syncAgents(data.agents);
         if (ctx.refresh3D) ctx.refresh3D();
         renderDeptMenu();
         return true;
@@ -678,11 +723,11 @@ export function initTasks(ctx) {
       const h = await (await fetch(API + '/health')).json();
       if (!h.ok) return;
       live = true; setOfficeModel(h.model); setOfficeEffort(h.effort);
-      if (h.agents) syncAgents(h.agents);
       try {
         const dRes = await (await fetch(API + '/departments')).json();
         if (dRes && dRes.ok) syncDepartments(dRes);
       } catch {}
+      if (h.agents) syncAgents(h.agents);
       const mode = panel.querySelector('.tp-mode');
       if (mode) {
         const engineLabel = (h.provider || 'antigravity').toUpperCase();

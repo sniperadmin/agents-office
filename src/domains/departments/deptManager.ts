@@ -295,12 +295,11 @@ export function initDeptManagerDomain(options: DeptManagerOptions) {
       b.addEventListener('click', async (e: any) => {
         e.stopPropagation();
         const k = e.target.getAttribute('data-disband');
-        if (confirm(`Are you sure you want to disband department ${k.toUpperCase()}? All agents in this department will be removed.`)) {
-          if (tasks && tasks.disbandDepartment) {
-            await tasks.disbandDepartment(k);
-            events.emit('DEPARTMENT_DISBANDED', { key: k });
-            loadDepts();
-          }
+        if (tasks && tasks.disbandDepartment) {
+          await tasks.disbandDepartment(k);
+          events.emit('DEPARTMENT_DISBANDED', { key: k });
+          refresh3D();
+          loadDepts();
         }
       });
     });
@@ -310,12 +309,11 @@ export function initDeptManagerDomain(options: DeptManagerOptions) {
         b.addEventListener('click', async (e: any) => {
           e.stopPropagation();
           const k = e.target.getAttribute('data-disband');
-          if (confirm(`Are you sure you want to deactivate department ${k.toUpperCase()}?`)) {
-            if (tasks && tasks.disbandDepartment) {
-              await tasks.disbandDepartment(k);
-              events.emit('DEPARTMENT_DISBANDED', { key: k });
-              loadDepts();
-            }
+          if (tasks && tasks.disbandDepartment) {
+            await tasks.disbandDepartment(k);
+            events.emit('DEPARTMENT_DISBANDED', { key: k });
+            refresh3D();
+            loadDepts();
           }
         });
       });

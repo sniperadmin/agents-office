@@ -13,68 +13,24 @@
       "brief": ""
     },
     {
-      "id": "foundations-head",
-      "department": "foundations",
+      "id": "growth-ceo",
+      "department": "exec",
+      "lead": false,
+      "is_ceo": false,
+      "name": "GROWTH CEO",
+      "role": "GROWTH CEO Specialist",
+      "does": "Drives growth ceo strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "mlead",
+      "department": "marketing",
       "lead": true,
       "is_ceo": false,
-      "name": "FOUNDATIONS HEAD",
-      "role": "FOUNDATIONS HEAD Specialist",
-      "does": "Drives foundations head strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "icp-builder",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "ICP BUILDER",
-      "role": "ICP BUILDER Specialist",
-      "does": "Drives icp builder strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "niche-architect",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "NICHE ARCHITECT",
-      "role": "NICHE ARCHITECT Specialist",
-      "does": "Drives niche architect strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "offer-architect",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "OFFER ARCHITECT",
-      "role": "OFFER ARCHITECT Specialist",
-      "does": "Drives offer architect strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "brand-voice",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "BRAND VOICE SPECIALIST",
-      "role": "BRAND VOICE SPECIALIST Specialist",
-      "does": "Drives brand voice specialist strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "financial-modeler",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "FINANCIAL MODELER",
-      "role": "FINANCIAL MODELER Specialist",
-      "does": "Drives financial modeler strategy, execution, and deliverables for the department.",
+      "name": "MARKETING LEAD",
+      "role": "Marketing Lead",
+      "does": "Runs the marketing team — six agents report to it — owns the content calendar and the ad budget, and reports what worked to AJ weekly.",
       "tools": [],
       "brief": ""
     },
@@ -156,6 +112,28 @@
       "brief": ""
     },
     {
+      "id": "newt",
+      "department": "marketing",
+      "lead": false,
+      "is_ceo": false,
+      "name": "PODCAST NOTES",
+      "role": "Newsletter Creator Agent",
+      "does": "Writes the monthly newsletter your signups actually open.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "lexi",
+      "department": "sales",
+      "lead": true,
+      "is_ceo": false,
+      "name": "SALES LEAD",
+      "role": "Sales Team Lead Agent",
+      "does": "Runs the sales team — five agents report to it — and it owns the reps’ call lists.",
+      "tools": [],
+      "brief": ""
+    },
+    {
       "id": "sales-head",
       "department": "sales",
       "lead": false,
@@ -163,6 +141,17 @@
       "name": "SALES HEAD",
       "role": "SALES HEAD Specialist",
       "does": "Drives sales head strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "funnel-architect",
+      "department": "sales",
+      "lead": false,
+      "is_ceo": false,
+      "name": "FUNNEL ARCHITECT",
+      "role": "FUNNEL ARCHITECT Specialist",
+      "does": "Drives funnel architect strategy, execution, and deliverables for the department.",
       "tools": [],
       "brief": ""
     },
@@ -233,6 +222,138 @@
       "brief": ""
     },
     {
+      "id": "piper",
+      "department": "sales",
+      "lead": false,
+      "is_ceo": false,
+      "name": "PROPOSALS",
+      "role": "Proposal Agent",
+      "does": "Turns a deal brief into a proposal + send-ready email in minutes.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "folo",
+      "department": "sales",
+      "lead": false,
+      "is_ceo": false,
+      "name": "FOLLOW UPS",
+      "role": "Second-Touch & Revival Agent",
+      "does": "Chases everything that went quiet — unanswered calls, post-demo silence, stalled deals.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "foundations-head",
+      "department": "foundations",
+      "lead": true,
+      "is_ceo": false,
+      "name": "FOUNDATIONS HEAD",
+      "role": "FOUNDATIONS HEAD Specialist",
+      "does": "Drives foundations head strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "icp-builder",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "ICP BUILDER",
+      "role": "ICP BUILDER Specialist",
+      "does": "Drives icp builder strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "niche-architect",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "NICHE ARCHITECT",
+      "role": "NICHE ARCHITECT Specialist",
+      "does": "Drives niche architect strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "offer-architect",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "OFFER ARCHITECT",
+      "role": "OFFER ARCHITECT Specialist",
+      "does": "Drives offer architect strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "brand-voice",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "BRAND VOICE SPECIALIST",
+      "role": "BRAND VOICE SPECIALIST Specialist",
+      "does": "Drives brand voice specialist strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "financial-modeler",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "FINANCIAL MODELER",
+      "role": "FINANCIAL MODELER Specialist",
+      "does": "Drives financial modeler strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "researcher",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "RESEARCHER",
+      "role": "RESEARCHER Specialist",
+      "does": "Drives researcher strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "legal",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "LEGAL REVIEW",
+      "role": "Agreement Review Agent",
+      "does": "Reads every agreement before it goes out and gives it a second lens.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "invo",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "INVOICING",
+      "role": "Invoicing Agent",
+      "does": "Raises every invoice, chases every overdue — politely and relentlessly.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "olead",
+      "department": "nurture",
+      "lead": true,
+      "is_ceo": false,
+      "name": "NURTURE HEAD",
+      "role": "Operations Lead",
+      "does": "Runs operations — five agents report to it — keeps contracts, compliance, intel and reporting moving, and escalates only what needs AJ.",
+      "tools": [],
+      "brief": ""
+    },
+    {
       "id": "nurture-head",
       "department": "nurture",
       "lead": false,
@@ -288,6 +409,39 @@
       "brief": ""
     },
     {
+      "id": "cmail",
+      "department": "nurture",
+      "lead": false,
+      "is_ceo": false,
+      "name": "CLIENT EMAILS",
+      "role": "Client Email Agent",
+      "does": "Answers every client email from the Brain — scope, timelines, results — and never lets one sit past an hour.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "imail",
+      "department": "nurture",
+      "lead": false,
+      "is_ceo": false,
+      "name": "INTERNAL EMAILS",
+      "role": "Internal Email Agent",
+      "does": "Keeps the team inbox moving — triage, summaries of long threads, calendar holds, and the weekly numbers circulated.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "dlead",
+      "department": "launch",
+      "lead": true,
+      "is_ceo": false,
+      "name": "LAUNCH HEAD",
+      "role": "Delivery Lead",
+      "does": "Owns every live project end to end — risk, timelines, staffing, handovers — and reports the state of play to AJ weekly.",
+      "tools": [],
+      "brief": ""
+    },
+    {
       "id": "launch-head",
       "department": "launch",
       "lead": false,
@@ -317,6 +471,28 @@
       "name": "POST LAUNCH ANALYST",
       "role": "POST LAUNCH ANALYST Specialist",
       "does": "Drives post launch analyst strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "qa",
+      "department": "launch",
+      "lead": false,
+      "is_ceo": false,
+      "name": "QUALITY ASSURANCE",
+      "role": "QA Checker",
+      "does": "Nothing reaches a client until it passes: links, spelling, brand rules, numbers, the flows a client will actually click.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "alead",
+      "department": "partnerships",
+      "lead": true,
+      "is_ceo": false,
+      "name": "PARTNERSHIPS HEAD",
+      "role": "Accounting Lead Agent",
+      "does": "Runs the accounting team: Invoicing, Payables, Reconciliation report to it.",
       "tools": [],
       "brief": ""
     },
@@ -365,6 +541,17 @@
       "brief": ""
     },
     {
+      "id": "elead",
+      "department": "scale",
+      "lead": true,
+      "is_ceo": false,
+      "name": "SCALE HEAD",
+      "role": "Inbox Lead",
+      "does": "Runs the whole inbox: routes every email to the right desk, checks tone, and escalates only what needs AJ.",
+      "tools": [],
+      "brief": ""
+    },
+    {
       "id": "scale-head",
       "department": "scale",
       "lead": false,
@@ -372,6 +559,17 @@
       "name": "SCALE LEAD",
       "role": "SCALE LEAD Specialist",
       "does": "Drives scale lead strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "competitor-analyst",
+      "department": "scale",
+      "lead": false,
+      "is_ceo": false,
+      "name": "COMPETITOR ANALYST",
+      "role": "COMPETITOR ANALYST Specialist",
+      "does": "Drives competitor analyst strategy, execution, and deliverables for the department.",
       "tools": [],
       "brief": ""
     },
@@ -420,160 +618,6 @@
       "brief": ""
     },
     {
-      "id": "mlead",
-      "department": "marketing",
-      "lead": true,
-      "is_ceo": false,
-      "name": "MARKETING LEAD",
-      "role": "Marketing Lead",
-      "does": "Runs the marketing team — six agents report to it — owns the content calendar and the ad budget, and reports what worked to AJ weekly.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "lexi",
-      "department": "sales",
-      "lead": true,
-      "is_ceo": false,
-      "name": "SALES LEAD",
-      "role": "Sales Team Lead Agent",
-      "does": "Runs the sales team — five agents report to it — and it owns the reps’ call lists.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "piper",
-      "department": "sales",
-      "lead": false,
-      "is_ceo": false,
-      "name": "PROPOSALS",
-      "role": "Proposal Agent",
-      "does": "Turns a deal brief into a proposal + send-ready email in minutes.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "folo",
-      "department": "sales",
-      "lead": false,
-      "is_ceo": false,
-      "name": "FOLLOW UPS",
-      "role": "Second-Touch & Revival Agent",
-      "does": "Chases everything that went quiet — unanswered calls, post-demo silence, stalled deals.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "elead",
-      "department": "scale",
-      "lead": true,
-      "is_ceo": false,
-      "name": "SCALE HEAD",
-      "role": "Inbox Lead",
-      "does": "Runs the whole inbox: routes every email to the right desk, checks tone, and escalates only what needs AJ.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "cmail",
-      "department": "nurture",
-      "lead": false,
-      "is_ceo": false,
-      "name": "CLIENT EMAILS",
-      "role": "Client Email Agent",
-      "does": "Answers every client email from the Brain — scope, timelines, results — and never lets one sit past an hour.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "imail",
-      "department": "nurture",
-      "lead": false,
-      "is_ceo": false,
-      "name": "INTERNAL EMAILS",
-      "role": "Internal Email Agent",
-      "does": "Keeps the team inbox moving — triage, summaries of long threads, calendar holds, and the weekly numbers circulated.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "olead",
-      "department": "nurture",
-      "lead": true,
-      "is_ceo": false,
-      "name": "NURTURE HEAD",
-      "role": "Operations Lead",
-      "does": "Runs operations — five agents report to it — keeps contracts, compliance, intel and reporting moving, and escalates only what needs AJ.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "legal",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "LEGAL REVIEW",
-      "role": "Agreement Review Agent",
-      "does": "Reads every agreement before it goes out and gives it a second lens.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "alead",
-      "department": "partnerships",
-      "lead": true,
-      "is_ceo": false,
-      "name": "PARTNERSHIPS HEAD",
-      "role": "Accounting Lead Agent",
-      "does": "Runs the accounting team: Invoicing, Payables, Reconciliation report to it.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "invo",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "INVOICING",
-      "role": "Invoicing Agent",
-      "does": "Raises every invoice, chases every overdue — politely and relentlessly.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "dlead",
-      "department": "launch",
-      "lead": true,
-      "is_ceo": false,
-      "name": "LAUNCH HEAD",
-      "role": "Delivery Lead",
-      "does": "Owns every live project end to end — risk, timelines, staffing, handovers — and reports the state of play to AJ weekly.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "qa",
-      "department": "launch",
-      "lead": false,
-      "is_ceo": false,
-      "name": "QUALITY ASSURANCE",
-      "role": "QA Checker",
-      "does": "Nothing reaches a client until it passes: links, spelling, brand rules, numbers, the flows a client will actually click.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "newt",
-      "department": "marketing",
-      "lead": false,
-      "is_ceo": false,
-      "name": "PODCAST NOTES",
-      "role": "Newsletter Creator Agent",
-      "does": "Writes the monthly newsletter your signups actually open.",
-      "tools": [],
-      "brief": ""
-    },
-    {
       "id": "pete",
       "department": "scale",
       "lead": false,
@@ -585,46 +629,13 @@
       "brief": ""
     },
     {
-      "id": "growth-ceo",
+      "id": "exec_lead",
       "department": "exec",
-      "lead": false,
+      "lead": true,
       "is_ceo": false,
-      "name": "GROWTH CEO",
-      "role": "GROWTH CEO Specialist",
-      "does": "Drives growth ceo strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "researcher",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "RESEARCHER",
-      "role": "RESEARCHER Specialist",
-      "does": "Drives researcher strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "funnel-architect",
-      "department": "sales",
-      "lead": false,
-      "is_ceo": false,
-      "name": "FUNNEL ARCHITECT",
-      "role": "FUNNEL ARCHITECT Specialist",
-      "does": "Drives funnel architect strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "competitor-analyst",
-      "department": "scale",
-      "lead": false,
-      "is_ceo": false,
-      "name": "COMPETITOR ANALYST",
-      "role": "COMPETITOR ANALYST Specialist",
-      "does": "Drives competitor analyst strategy, execution, and deliverables for the department.",
+      "name": "CHIEF EXECUTIVE OFFICER",
+      "role": "EXECUTIVE Lead",
+      "does": "Manages EXECUTIVE operations",
       "tools": [],
       "brief": ""
     }

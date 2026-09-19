@@ -51,7 +51,14 @@ const RESERVE_ROLES: Record<string, string[]> = {
   sec: ['AppSec Engineer', 'Penetration Tester', 'Threat Detection Specialist', 'Data Privacy Officer'],
   growth: ['Growth Hacker', 'Analytics Reporter', 'AI Citation Strategist', 'Data Engineer'],
   legal_fin: ['Legal Doc Reviewer', 'Legal Client Intake', 'Accounts Payable Agent', 'Finance Tracker'],
-  support: ['Support Responder', 'Customer Service Specialist', 'Client Success Manager']
+  support: ['Support Responder', 'Customer Service Specialist', 'Client Success Manager'],
+  marketing: ['Marketing Head', 'Short-Form Specialist', 'LinkedIn Writer', 'Paid Ads'],
+  sales: ['Sales Head', 'Funnel Architect', 'VSL Builder', 'Sales Scripter'],
+  nurture: ['Nurture Head', 'Email Copywriter', 'Lead Magnet Designer', 'Show-Rate Ops'],
+  launch: ['Launch Head', 'Launch Manager', 'Post-Launch Analyst', 'Case Study Producer'],
+  partnerships: ['Partnerships Head', 'JV Outreach', 'Referral Designer', 'Affiliate Architect'],
+  scale: ['Scale Head', 'Revenue Analyst', 'SOP Builder', 'Client Success'],
+  foundations: ['Foundations Head', 'ICP Builder', 'Offer Architect', 'Niche Architect', 'Brand Voice', 'Financial Modeler', 'Researcher']
 };
 
 function ensureDepartmentAgents(deptKey: string, deptName: string, leadName?: string, model?: string, rolesInput?: string[]) {
@@ -88,7 +95,18 @@ function ensureDepartmentAgents(deptKey: string, deptName: string, leadName?: st
   });
 }
 
-if (Array.isArray(cfg.customDepartments)) {
+const dbDepts = db.getCustomDepartments();
+if (dbDepts && dbDepts.length > 0) {
+  DEPT_KEYS.length = 0;
+  for (const d of dbDepts) {
+    if (d.key) {
+      if (!DEPT_KEYS.includes(d.key)) DEPT_KEYS.push(d.key);
+      DEPTS[d.key] = { name: d.name || d.key.toUpperCase(), short: d.name || d.key.toUpperCase(), chip: d.chip || '#8FD3F4', ink: d.ink || '#2E86AB', floor: d.floor || '#E6F4FB' };
+      ensureDepartmentAgents(d.key, d.name || d.key.toUpperCase(), d.leadName, d.model, d.roles);
+    }
+  }
+} else if (Array.isArray(cfg.customDepartments) && cfg.customDepartments.length > 0) {
+  DEPT_KEYS.length = 0;
   for (const d of cfg.customDepartments) {
     if (d.key) {
       if (!DEPT_KEYS.includes(d.key)) DEPT_KEYS.push(d.key);
@@ -96,6 +114,10 @@ if (Array.isArray(cfg.customDepartments)) {
       ensureDepartmentAgents(d.key, d.name || d.key.toUpperCase(), d.leadName, d.model, d.roles);
     }
   }
+} else {
+  DEPT_KEYS.length = 0;
+  DEPT_KEYS.push('exec');
+  ensureDepartmentAgents('exec', 'EXECUTIVE', 'CHIEF EXECUTIVE OFFICER');
 }
 let skills = loadSkills(BRAIN, AGENTS); // reloaded before every task and chat, so a new skill needs no restart
 for (const w of skills.problems) console.warn('skills:', w);
@@ -108,7 +130,7 @@ function reloadRoster() {
 }
 const refreshSkills = () => { reloadRoster(); const s = loadSkills(BRAIN, AGENTS); if (s.problems.join() !== skills.problems.join()) for (const w of s.problems) console.warn('skills:', w); skills = s; return s; };
 const leadOf = (dept: string) => AGENTS.find(a => a.department === dept && a.lead) || AGENTS.find(a => a.department === dept)!;
-const setupMap = () => Object.fromEntries(DEPT_KEYS.map(k => [k, onboard.isSetUp(AGENTS, skills, k)]));
+const setupMap = () => Object.fromEntries(Object.keys(DEPTS).concat(DEPT_KEYS).filter((v, i, a) => a.indexOf(v) === i && v !== 'brain').map(k => [k, onboard.isSetUp(AGENTS, skills, k)]));
 
 let backend = 'claude-cli', sdk: any = null;
 if (process.env.ANTHROPIC_API_KEY) {
@@ -673,7 +695,13 @@ const server = http.createServer(async (req, res) => {
         if (aIdx >= 0) AGENTS.splice(aIdx, 1);
       }
       pushEvent('department_deleted', { key: deptKey });
-      return json(res, 200, { ok: true, deleted: deptKey });
+      const deptsMap: Record<string, any> = {};
+      for (const k of DEPT_KEYS) {
+        if (DEPTS[k]) {
+          deptsMap[k] = { ...DEPTS[k], activeCount: AGENTS.filter(a => a.department === k).length };
+        }
+      }
+      return json(res, 200, { ok: true, deleted: deptKey, agents: agentsOut(), keys: DEPT_KEYS, depts: deptsMap, departments: deptsMap, coreDepts: DEPT_KEYS });
     }
 
     const am = url.pathname.match(/^\/api\/agents\/([^/]+)$/);

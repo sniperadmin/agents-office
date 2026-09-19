@@ -154,7 +154,7 @@ const DEFAULT_LAYOUTS: Record<string, LayoutConfig> = {
   ops:       { pos: [0, 48],    w: 20, d: 30 },
 };
 
-export const CORE_DEPTS = new Set(['exec', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale', 'brain']);
+export const CORE_DEPTS = new Set(['exec', 'brain']);
 
 export function getDeptDimensions(key: string): { w: number; d: number; cols: number; rows: number; spacingX: number; spacingZ: number } {
   if (key === 'brain') return { w: 16, d: 16, cols: 1, rows: 1, spacingX: 0, spacingZ: 0 };
@@ -171,14 +171,12 @@ export function getDeptDimensions(key: string): { w: number; d: number; cols: nu
 
 export function getSymmetricPos(key: string): [number, number] {
   if (key === 'brain') return [0, 0];
-  const active = DEPT_KEYS.filter(k => k !== 'brain');
+  const active = DEPT_KEYS.includes(key) ? DEPT_KEYS.filter(k => k !== 'brain') : [...DEPT_KEYS.filter(k => k !== 'brain'), key];
   const idx = active.indexOf(key);
   const N = Math.max(1, active.length);
-  const effectiveIdx = idx >= 0 ? idx : N;
-  const total = idx >= 0 ? N : N + 1;
-  const theta = -Math.PI / 2 + (effectiveIdx * 2 * Math.PI) / total;
-  const Rx = Math.max(56, 40 + total * 3);
-  const Rz = Math.max(46, 34 + total * 2.5);
+  const theta = -Math.PI / 2 + (idx * 2 * Math.PI) / N;
+  const Rx = Math.max(56, 40 + N * 3);
+  const Rz = Math.max(46, 34 + N * 2.5);
   const x = Math.round(Rx * Math.cos(theta));
   const z = Math.round(Rz * Math.sin(theta));
   return [x, z];
