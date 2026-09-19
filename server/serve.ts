@@ -63,6 +63,21 @@ const RESERVE_ROLES: Record<string, string[]> = {
 
 function ensureDepartmentAgents(deptKey: string, deptName: string, leadName?: string, model?: string, rolesInput?: string[]) {
   const k = deptKey;
+  if (k === 'exec') {
+    // Executive team lead is 'ceo' (is_ceo: true), not a duplicate 'exec_lead'
+    if (!AGENTS.some(a => a.id === 'ceo')) {
+      const ceoObj = {
+        id: 'ceo', name: leadName || 'CHIEF EXECUTIVE OFFICER',
+        dept: 'exec', department: 'exec', lead: true, is_ceo: true, grid: [0, 0],
+        hair: '#1c1917', skin: '#F5D5B0', role: 'CHIEF EXECUTIVE OFFICER Specialist',
+        does: 'Drives chief executive officer strategy, execution, and deliverables for the department.',
+        tools: [], brief: '', model: model || '', effort: ''
+      };
+      AGENTS.push(ceoObj as any);
+      db.addOrUpdateAgent(ceoObj as any);
+    }
+    return;
+  }
   const leadId = `${k}_lead`;
   if (!AGENTS.some(a => a.id === leadId)) {
     const leadObj = {
@@ -94,6 +109,13 @@ function ensureDepartmentAgents(deptKey: string, deptName: string, leadName?: st
     }
   });
 }
+
+// Clean up any stale exec_lead agent
+try {
+  db.deleteAgent('exec_lead');
+  const staleIdx = AGENTS.findIndex(a => a.id === 'exec_lead');
+  if (staleIdx >= 0) AGENTS.splice(staleIdx, 1);
+} catch {}
 
 const dbDepts = db.getCustomDepartments();
 DEPT_KEYS.length = 0;

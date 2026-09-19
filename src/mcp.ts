@@ -331,18 +331,18 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, DEPT_KEYS, FR, R, connector
     shared[key] = { ink, drop, jdot, wires: wiresOf, offset: 0, jy: 92 + si * 10 };
   });
 
-  // ── the MODEL layer (AJ, 5 Sep 2026): Claude + ChatGPT run the office headless ──
-  // Two logos on the right of the top bar, each wired straight into the Brain pod — the
+  // ── the MODEL layer: Antigravity runs the office headless ──
+  // The Antigravity logo on the right of the top bar is wired straight into the Brain pod — the
   // conduits pulse on their own so the thinking is visible even when nothing else fires.
-  const MODELS = { claude: '#D97757', chatgpt: '#151414' };
+  const MODELS: Record<string, string> = { antigravity: '#7C3AED' };
   const topmodels = document.getElementById('topmodels');
-  const modelImgs = {};
+  const modelImgs: Record<string, HTMLImageElement> = {};
   if (topmodels) {
     topmodels.innerHTML = `<span class="tc-lab"><span class="dot"></span>RUNS HEADLESS ON</span>`;
     Object.keys(MODELS).forEach((k, i) => {
       const img = document.createElement('img');
-      img.src = LOGOS[k].img;
-      img.alt = img.title = LOGOS[k].name + ' — headless';
+      img.src = LOGOS[k]?.img || MCP_LOGOS[k]?.img || '';
+      img.alt = img.title = (LOGOS[k]?.name || 'Antigravity') + ' — headless';
       img.style.setProperty('--d', (0.9 + i * 0.12) + 's');
       img.addEventListener('animationend', (e) => { if (e.animationName === 'tcin') img.classList.add('in'); });
       img.addEventListener('click', () => modelPulse(k, true));
@@ -350,7 +350,7 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, DEPT_KEYS, FR, R, connector
       modelImgs[k] = img;
     });
   }
-  const mwires = {};
+  const mwires: Record<string, any> = {};
   Object.keys(MODELS).forEach((k, i) => {
     const path = document.createElementNS(svgNS, 'path');
     path.setAttribute('fill', 'none');
@@ -367,28 +367,26 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, DEPT_KEYS, FR, R, connector
     mwires[k] = { path, dot, port: [LAYOUT.brain.w / 2 - 2 - i * 4, 1.3, -LAYOUT.brain.d / 2] };
   });
   let nextModelPulse = performance.now() + 2600;
-  // V3.6 (A3 · B1 · C1): the plan's own gauge beside the Claude logo — session and week, as Claude Code shows them.
-  // Live means Claude only: the ChatGPT tile and its wire are demo theatre and go the first time usage arrives.
-  let usageEl = null;
-  function setUsage(u) {
+  // Antigravity rolling usage gauge beside the logo — session tokens and runs
+  let usageEl: HTMLElement | null = null;
+  function setUsage(u: any) {
     if (!topmodels) return;
-    if (modelImgs.chatgpt) { modelImgs.chatgpt.remove(); delete modelImgs.chatgpt; const w = mwires.chatgpt; if (w) { w.path.setAttribute('d', ''); w.dot.setAttribute('opacity', 0); delete mwires.chatgpt; } }
     if (!usageEl) { usageEl = document.createElement('span'); usageEl.className = 'tm-usage'; topmodels.appendChild(usageEl); }
-    const when = ts => ts ? new Date(ts).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '—';
-    const bar = (lab, x) => { if (!x) return ''; const cls = x.percent >= 90 ? 'c' : x.percent >= 75 ? 'w' : ''; return `<span>${lab}</span><span class="ub"><i class="${cls}" style="width:${x.percent}%"></i></span><b>${x.percent >= 100 ? 'LIMIT' : x.percent + '%'}</b>`; };
+    const when = (ts: any) => ts ? new Date(ts).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '—';
+    const bar = (lab: string, x: any) => { if (!x) return ''; const cls = x.percent >= 90 ? 'c' : x.percent >= 75 ? 'w' : ''; return `<span>${lab}</span><span class="ub"><i class="${cls}" style="width:${x.percent}%"></i></span><b>${x.percent >= 100 ? 'LIMIT' : x.percent + '%'}</b>`; };
     if (u && u.ok && u.source === 'claude') {
       usageEl.className = 'tm-usage';
       usageEl.innerHTML = bar('SESSION', u.session) + (u.session && u.week ? '<span class="sep">·</span>' : '') + bar('WEEK', u.week);
       usageEl.title = `Your Claude plan, as Claude Code shows it. Session resets ${when(u.session && u.session.resetsAt)} · week resets ${when(u.week && u.week.resetsAt)}.`;
-    } else if (u && u.ok && u.source === 'office') {
+    } else if (u && u.ok && (u.source === 'office' || u.source === 'antigravity')) {
       const w = u.window || {}; const n = w.tokens || 0; const tok = n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n);
       usageEl.className = 'tm-usage off';
       usageEl.innerHTML = `<span>THIS WINDOW</span><b>${tok}</b><span>TOKENS</span><span class="sep">·</span><b>${w.runs || 0}</b><span>RUNS</span>` + (w.resetsAt ? `<span class="sep">·</span><span>RESETS</span><b>${new Date(w.resetsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</b>` : '');
-      usageEl.title = `Claude's usage gauge is unavailable (${u.reason || 'no answer'}). This is the office's own count for the current five-hour window.`;
+      usageEl.title = `Antigravity Engine live consumption. This is the office's token count for the current five-hour window.`;
     } else { usageEl.className = 'tm-usage off'; usageEl.innerHTML = '<span>USAGE UNAVAILABLE</span>'; usageEl.title = (u && u.reason) || ''; }
   }
-  function modelPulse(k, strong = false) {
-    if (!modelImgs[k]) return; // a tile that has gone (ChatGPT in a live office) has no wire to pulse
+  function modelPulse(k: string, strong = false) {
+    if (!modelImgs[k]) return;
     wirePulse('brain', { model: k, scale: strong ? 1.2 : 0.9 });
     wirePulse('brain', { model: k, reverse: true, delay: 900, scale: strong ? 1 : 0.75 });
     if (modelImgs[k] && strong) { modelImgs[k].classList.remove('tpulse'); void modelImgs[k].offsetWidth; modelImgs[k].classList.add('tpulse'); }
@@ -517,7 +515,7 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, DEPT_KEYS, FR, R, connector
       m.dot.setAttribute('opacity', (f ? 0.85 : 0.45) * wireA);
     }
     if (now > nextModelPulse) {
-      modelPulse(Math.random() < 0.6 ? 'claude' : 'chatgpt');
+      modelPulse('antigravity');
       nextModelPulse = now + 2400 + Math.random() * 3200;
     }
     for (let i = wirePulses.length - 1; i >= 0; i--) {
@@ -662,7 +660,7 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, DEPT_KEYS, FR, R, connector
     const r = R[agentId]; if (!r || !Array.isArray(keys)) return;
     keys.forEach((key, i) => setTimeout(() => {
       const t = performance.now();
-      if (key === 'web') { modelPulse('claude', true); return; }
+      if (key === 'web') { modelPulse('antigravity', true); return; }
       const item = byDeptKey[r.a.dept + ':' + key] || items.find(it => it.key === key);
       if (!item) return;
       pulse(item, t, 0.3);
