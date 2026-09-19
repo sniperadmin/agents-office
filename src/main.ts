@@ -16,8 +16,20 @@ import { disposeHierarchy } from './graphics/SceneReconciler.ts';
 import { sseSync } from './core/SSESync.ts';
 import { store } from './core/Store.ts';
 import { events } from './core/EventBus.ts';
+import { createOfficeWorker } from './graphics/workerClient.ts';
 let tasks = null; // V3 task boards — initialised after the rail constants exist
 let brain: any = null;
+
+const officeWorker = createOfficeWorker();
+officeWorker.onSimTickResult((data) => {
+  if (data?.updates) {
+    for (const [id, u] of Object.entries(data.updates)) {
+      if (R[id]) {
+        R[id].workerBob = (u as any).bob;
+      }
+    }
+  }
+});
 
 /* ---------- renderer / scene / camera ---------- */
 const canvas = document.getElementById('scene');
@@ -1468,6 +1480,7 @@ function tickEmotes(now, dt) {
   }
 }
 function tickSim(now, dt) {
+  officeWorker.postSimTick(now, dt, AGENTS);
   for (const r of Object.values(R)) {
     if (r.state === 'working') {
       let mode;
@@ -1727,7 +1740,7 @@ window.CC = { flyTo, zoomToDept, zoomOut, zoomToApproval, requestApproval, openA
   setCam, setDark, brain, connectorReveal: () => mcp.startReveal(performance.now()),
   toggleBoard: () => tasks.toggle(), addTask: (agentId: string, title: string) => tasks.addTask(agentId, title), tasks, routines: () => tasks.routines,
   refresh3D, refreshMcp, resetMeshCache: async () => { await syncInitialStateFromApi(); refresh3D(); await refreshMcp(); return true; },
-  deptRT, DEPT_KEYS, DEPTS, AGENTS };
+  deptRT, DEPT_KEYS, DEPTS, AGENTS, worker: officeWorker };
 
 // Department Manager (Domain Driven Module)
 initDeptManagerDomain({ DEPT_KEYS, DEPTS, tasks, refresh3D, refreshMcp });

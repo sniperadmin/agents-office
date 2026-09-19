@@ -56,7 +56,7 @@ function readOne(where: string, entry: fs.Dirent, agents: any[], problems: strin
     if (ALL_KNOWN_DEPTS.has(low)) { if (!depts.includes(low)) depts.push(low); }
     else if (where !== GLOBAL_SKILLS) problems.push(`${label}: department "${dp}" does not exist — ignored`);
   }
-  for (const k of Object.keys(meta)) if (!['name', 'description', 'agents', 'departments', 'department', 'risk', 'source', 'date_added', 'id', 'role', 'title', 'reportsto', 'budget', 'color', 'emoji', 'adapter', 'signal', 'tools', 'skills', 'context_tier'].includes(k)) problems.push(`${label}: unknown field "${k}" — ignored`);
+  for (const k of Object.keys(meta)) if (!['name', 'description', 'agents', 'departments', 'department', 'risk', 'source', 'date_added', 'id', 'role', 'title', 'reportsto', 'budget', 'color', 'emoji', 'adapter', 'signal', 'tools', 'skills', 'context_tier', 'license', 'metadata', 'version', 'author'].includes(k) && where !== GLOBAL_SKILLS) problems.push(`${label}: unknown field "${k}" — ignored`);
   const hasExplicitTarget = rawAgents.length > 0 || rawDepts.length > 0;
   if (hasExplicitTarget && bound.length === 0 && depts.length === 0) return null;
   const everyone = !hasExplicitTarget;
@@ -70,8 +70,8 @@ function readOne(where: string, entry: fs.Dirent, agents: any[], problems: strin
       const fp = path.join(dir, f); if (!fs.statSync(fp).isFile()) continue;
       if (!TEXT.test(f)) { files.push({ name: f, text: null }); continue; }
       let t = fs.readFileSync(fp, 'utf8').trim();
-      if (used >= LIMITS.files) { files.push({ name: f, text: null }); problems.push(`${entry.name}/${f}: skill files over ${LIMITS.files} characters — listed by name only`); continue; }
-      if (t.length > LIMITS.perFile) { t = t.slice(0, LIMITS.perFile) + '\n[… trimmed]'; problems.push(`${entry.name}/${f}: over ${LIMITS.perFile} characters — trimmed`); }
+      if (used >= LIMITS.files) { files.push({ name: f, text: null }); if (where !== GLOBAL_SKILLS) problems.push(`${entry.name}/${f}: skill files over ${LIMITS.files} characters — listed by name only`); continue; }
+      if (t.length > LIMITS.perFile) { t = t.slice(0, LIMITS.perFile) + '\n[… trimmed]'; if (where !== GLOBAL_SKILLS) problems.push(`${entry.name}/${f}: over ${LIMITS.perFile} characters — trimmed`); }
       used += t.length; files.push({ name: f, text: t });
     }
   }
