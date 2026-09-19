@@ -11,6 +11,7 @@
 // Opened as a file (no server) the demo list below still plays.
 import * as THREE from 'three';
 import { MCP_LOGOS, MCP_BY_DEPT } from './mcplogos.ts';
+import { DEPT_KEYS as DEFAULT_DEPT_KEYS } from './data.ts';
 
 // agent → tools they'd plausibly be driving (falls back to any connector in the dept's dock)
 export const AGENT_MCP = {
@@ -41,28 +42,61 @@ const FRONT = new THREE.Vector3(1, 0, 1).normalize();
 // fdir/fdist/fh (optional) = a SECOND anchor used while that dept is focused, lerped in by
 // focusDim — the marketing focus look (row floating in the empty gap beside the pod, labels
 // under, pill above) is AJ's approved reference; support/sales re-anchor to match it.
-const DOCKS = {
-  marketing: { dir: SR.clone().negate(), dist: 12.5, h: 8.0 },  // screen-left of pod — the approved reference look
-  emails:    { dir: SR.clone(),          dist: 12.5, h: 8.0,    // overview: screen-right of pod (was support's slot)
+const DOCKS: Record<string, any> = {
+  marketing:   { dir: SR.clone().negate(), dist: 12.5, h: 8.0 },  // screen-left of pod — the approved reference look
+  emails:      { dir: SR.clone(),          dist: 12.5, h: 8.0,    // overview: screen-right of pod (was support's slot)
                fdir: SR.clone().negate(), fdist: 12.5 },        // focus: mirror marketing (rail LEFT, empty gap left of pod)
-  delivery:  { dir: SR.clone().negate(), dist: 12.5, h: 8.0 },  // rail LEFT like marketing → dock in the gap beside the pod
-  sales:     { dir: FRONT.clone(),       dist: 17.5, h: 8.0,    // overview: front row below the pod (old right-edge stack clipped off-screen)
+  delivery:    { dir: SR.clone().negate(), dist: 12.5, h: 8.0 },  // rail LEFT like marketing → dock in the gap beside the pod
+  sales:       { dir: FRONT.clone(),       dist: 17.5, h: 8.0,    // overview: front row below the pod (old right-edge stack clipped off-screen)
                fdir: SR.clone().negate(), fdist: 13.5 },        // focus: marketing-style row in the open floor (rail is RIGHT)
-  fin:       { dir: FRONT.clone(), dist: 20.5, h: 8.0 },        // front-bottom past the corner; camera-facing
-                                                                // (20.5 not 17.5 — the pod lost 2 rows in the ops/finance split)
-  ops:       { dir: SR.clone().negate(), dist: 13.5, h: 8.0,    // bottom-left pod: dock in the open floor to its screen-left
+  fin:         { dir: FRONT.clone(), dist: 20.5, h: 8.0 },        // front-bottom past the corner; camera-facing
+  ops:         { dir: SR.clone().negate(), dist: 13.5, h: 8.0,    // bottom-left pod: dock in the open floor to its screen-left
                fdir: SR.clone().negate(), fdist: 13.5 },
+  design:      { dir: SR.clone().negate(), dist: 13.5, h: 8.0 },
+  dev:         { dir: SR.clone(), dist: 13.5, h: 8.0 },
+  devops:      { dir: SR.clone(), dist: 13.5, h: 8.0 },
+  sec:         { dir: FRONT.clone(), dist: 16.5, h: 8.0 },
+  growth:      { dir: SR.clone().negate(), dist: 12.5, h: 8.0 },
+  creative:    { dir: SR.clone().negate(), dist: 12.5, h: 8.0 },
+  intel:       { dir: FRONT.clone(), dist: 16.5, h: 8.0 },
+  exec:        { dir: SR.clone(), dist: 12.5, h: 8.0 },
+  foundations: { dir: FRONT.clone(), dist: 15.5, h: 8.0 },
+  nurture:     { dir: SR.clone().negate(), dist: 12.5, h: 8.0 },
+  launch:      { dir: SR.clone(), dist: 12.5, h: 8.0 },
+  partnerships:{ dir: FRONT.clone(), dist: 15.5, h: 8.0 },
+  scale:       { dir: SR.clone().negate(), dist: 12.5, h: 8.0 },
+  support:     { dir: SR.clone(), dist: 12.5, h: 8.0 },
+  legal_fin:   { dir: FRONT.clone(), dist: 18.5, h: 8.0 },
 };
 
 function smooth(a, b, x) { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
 
-export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null }) {
+export function initMcp({ scene, hud, LAYOUT, DEPTS, DEPT_KEYS, FR, R, connectors = null }: any) {
+  const ACTIVE_DEPTS = (DEPT_KEYS && DEPT_KEYS.length) ? DEPT_KEYS : DEFAULT_DEPT_KEYS;
   const LIVE = !!(connectors && connectors.live);
   const BY_DEPT = LIVE ? connectors.byDept : MCP_BY_DEPT;
   const LOGOS = LIVE ? { ...MCP_LOGOS, ...connectors.logos } : MCP_LOGOS;
   const AGENT_TOOLS = (LIVE && connectors.agentTools) || AGENT_MCP;
   const STATUS = (LIVE && connectors.status) || {};
   const NAMES = (LIVE && connectors.names) || {};
+
+  // Clean up any existing MCP 3D objects in scene to prevent lingering meshes
+  if (scene) {
+    const toRemove: THREE.Object3D[] = [];
+    scene.traverse((o: any) => {
+      if (o.userData && (o.userData.mcpKey || o.userData.isMcpGlow || o.userData.isMcp)) {
+        toRemove.push(o);
+      }
+    });
+    toRemove.forEach(o => {
+      scene.remove(o);
+      if ((o as any).geometry) (o as any).geometry.dispose();
+      if ((o as any).material) {
+        if (Array.isArray((o as any).material)) (o as any).material.forEach((m: any) => m.dispose());
+        else (o as any).material.dispose();
+      }
+    });
+  }
 
   const loader = new THREE.TextureLoader();
   const items = [];          // every connector tile
@@ -96,6 +130,7 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
   }
 
   for (const [dept, keys] of Object.entries(BY_DEPT || {})) {
+    if (!ACTIVE_DEPTS.includes(dept)) continue;
     const L = LAYOUT[dept];
     if (!L) continue;
     const D = DOCKS[dept] || { dir: SR.clone().negate(), dist: 12.5, h: 8.0 };
@@ -112,11 +147,14 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
         const glow = new THREE.Sprite(new THREE.SpriteMaterial({
           map: glowT, transparent: true, opacity: 0, depthTest: false }));
         glow.renderOrder = 48;
+        glow.userData.dept = dept;
+        glow.userData.isMcpGlow = true;
         scene.add(glow);
         const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
         s.renderOrder = 50;
         s.userData.dept = dept;       // joins the focus-dim pass
         s.userData.mcpKey = key;
+        s.userData.isMcp = true;
         scene.add(s);
         sprites.push(s);
 
@@ -201,13 +239,24 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
   // flight path (entering from the sky is what made it look like an airstrike). The dash
   // pattern crawls toward the pod for constant "data flowing" life; real events send a
   // brighter pulse dot along the wire (reverse = desk→tool ack rides back up).
+  const existingSvg = document.getElementById('wires');
+  if (existingSvg) existingSvg.remove();
+  if (hud) hud.querySelectorAll('.mcpl, .connl').forEach(el => el.remove());
+
   const svgNS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(svgNS, 'svg');
   svg.id = 'wires';
   hud.insertBefore(svg, hud.firstChild); // under every HUD overlay, above the 3D canvas
-  const PORT_CORNER = { marketing: [-1, 1], emails: [-1, -1], sales: [1, -1], ops: [1, -1], fin: [1, -1], delivery: [-1, -1] };
-  const wires = {}, wirePulses = [];
+  const PORT_CORNER: Record<string, [number, number]> = {
+    marketing: [-1, 1], emails: [-1, -1], sales: [1, -1], ops: [1, -1],
+    fin: [1, -1], delivery: [-1, -1], exec: [1, -1], foundations: [1, 1],
+    nurture: [-1, 1], launch: [-1, -1], partnerships: [1, -1], scale: [1, 1],
+    design: [-1, 1], dev: [1, -1], devops: [1, -1], sec: [1, -1], growth: [-1, 1],
+    creative: [-1, 1], intel: [1, 1], support: [-1, -1], legal_fin: [1, -1]
+  };
+  const wires: Record<string, any> = {}, wirePulses: any[] = [];
   Object.keys(BY_DEPT || {}).forEach((dept, ji) => {
+    if (!ACTIVE_DEPTS.includes(dept)) return;
     const L = LAYOUT[dept];
     if (!L) return;
     const [cx, cz] = PORT_CORNER[dept] || [-1, 1];
@@ -244,7 +293,7 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
   // INDEPENDENT trunk-style conduit per using dept, entering the pod at its own socket a few
   // units along the edge from the dept's port (cables plugged in side by side, never merged).
   // Traffic keyed to a shared connector pulses on ITS wire, not the dept trunk.
-  const shared = {};
+  const shared: Record<string, any> = {};
   Object.keys(SHARED).forEach((key, si) => {
     const ink = SHARED[key];
     const drop = document.createElementNS(svgNS, 'path'); // logo → junction
@@ -258,8 +307,8 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
     jdot.setAttribute('r', '1.9');
     jdot.setAttribute('fill', ink);
     svg.appendChild(jdot);
-    const wiresOf = {};
-    Object.keys(BY_DEPT || {}).filter(d => Array.isArray(BY_DEPT[d]) && BY_DEPT[d].includes(key)).forEach(dept => {
+    const wiresOf: Record<string, any> = {};
+    Object.keys(BY_DEPT || {}).filter(d => Array.isArray(BY_DEPT[d]) && BY_DEPT[d].includes(key) && ACTIVE_DEPTS.includes(d)).forEach(dept => {
       const L = LAYOUT[dept];
       if (!L) return;
       const [cx, cz] = PORT_CORNER[dept] || [-1, 1];
@@ -491,8 +540,8 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
     for (const [dept, keys] of Object.entries(BY_DEPT)) {
       if (!keys.includes(key)) continue;
       const item = byDeptKey[dept + ':' + key];
-      const seats = docks[dept].seats;
-      if (!item || !seats.length) continue;
+      const seats = docks[dept] ? docks[dept].seats : [];
+      if (!item || !seats || !seats.length) continue;
       pulse(item, now, 0.3);
       const seat = seats[Math.floor(Math.random() * seats.length)];
       spawnBeam(item, seat, now, { count: 3 });                                        // tool → desk
@@ -666,8 +715,8 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
       const go = !focused;
       volleyAt = 0;
       if (go) Object.keys(BY_DEPT).forEach((dept, i) => setTimeout(() => {
-        const its = byDept[dept], seats = docks[dept].seats;
-        if (!its.length || !seats.length) return;
+        const its = byDept[dept] || [], seats = docks[dept] ? docks[dept].seats : [];
+        if (!its.length || !seats || !seats.length) return;
         const item = its[Math.floor(Math.random() * its.length)];
         pulse(item, performance.now(), 0.3);
         spawnBeam(item, seats[Math.floor(Math.random() * seats.length)], performance.now(), { scale: 0.9 });

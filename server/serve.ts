@@ -96,28 +96,27 @@ function ensureDepartmentAgents(deptKey: string, deptName: string, leadName?: st
 }
 
 const dbDepts = db.getCustomDepartments();
+DEPT_KEYS.length = 0;
+DEPT_KEYS.push('exec');
+DEPTS['exec'] = { name: 'EXECUTIVE', short: 'EXEC', chip: '#F59E0B', ink: '#B45309', floor: '#FEF3C7' };
+ensureDepartmentAgents('exec', 'EXECUTIVE', 'CHIEF EXECUTIVE OFFICER');
+
 if (dbDepts && dbDepts.length > 0) {
-  DEPT_KEYS.length = 0;
   for (const d of dbDepts) {
-    if (d.key) {
+    if (d.key && d.key !== 'exec') {
       if (!DEPT_KEYS.includes(d.key)) DEPT_KEYS.push(d.key);
-      DEPTS[d.key] = { name: d.name || d.key.toUpperCase(), short: d.name || d.key.toUpperCase(), chip: d.chip || '#8FD3F4', ink: d.ink || '#2E86AB', floor: d.floor || '#E6F4FB' };
+      DEPTS[d.key] = { name: d.name || d.key.toUpperCase(), short: d.short || d.name || d.key.toUpperCase(), chip: d.chip || '#8FD3F4', ink: d.ink || '#2E86AB', floor: d.floor || '#E6F4FB' };
       ensureDepartmentAgents(d.key, d.name || d.key.toUpperCase(), d.leadName, d.model, d.roles);
     }
   }
 } else if (Array.isArray(cfg.customDepartments) && cfg.customDepartments.length > 0) {
-  DEPT_KEYS.length = 0;
   for (const d of cfg.customDepartments) {
-    if (d.key) {
+    if (d.key && d.key !== 'exec') {
       if (!DEPT_KEYS.includes(d.key)) DEPT_KEYS.push(d.key);
-      DEPTS[d.key] = { name: d.name || d.key.toUpperCase(), short: d.name || d.key.toUpperCase(), chip: d.chip || '#8FD3F4', ink: d.ink || '#2E86AB', floor: d.floor || '#E6F4FB' };
+      DEPTS[d.key] = { name: d.name || d.key.toUpperCase(), short: d.short || d.name || d.key.toUpperCase(), chip: d.chip || '#8FD3F4', ink: d.ink || '#2E86AB', floor: d.floor || '#E6F4FB' };
       ensureDepartmentAgents(d.key, d.name || d.key.toUpperCase(), d.leadName, d.model, d.roles);
     }
   }
-} else {
-  DEPT_KEYS.length = 0;
-  DEPT_KEYS.push('exec');
-  ensureDepartmentAgents('exec', 'EXECUTIVE', 'CHIEF EXECUTIVE OFFICER');
 }
 let skills = loadSkills(BRAIN, AGENTS); // reloaded before every task and chat, so a new skill needs no restart
 for (const w of skills.problems) console.warn('skills:', w);
@@ -677,10 +676,18 @@ const server = http.createServer(async (req, res) => {
       };
       db.addOrUpdateDepartment(deptObj);
       if (!DEPT_KEYS.includes(k)) DEPT_KEYS.push(k);
+      if (!DEPT_KEYS.includes('exec')) DEPT_KEYS.unshift('exec');
       DEPTS[k] = { name: deptObj.name, short: deptObj.short, chip: deptObj.chip, ink: deptObj.ink, floor: deptObj.floor };
+      DEPTS['exec'] = DEPTS['exec'] || { name: 'EXECUTIVE', short: 'EXEC', chip: '#F59E0B', ink: '#B45309', floor: '#FEF3C7' };
       ensureDepartmentAgents(k, deptObj.name, deptObj.leadName, deptObj.model, deptObj.roles);
       pushEvent('department_created', { key: k });
-      return json(res, 200, { ok: true, department: deptObj, agents: agentsOut() });
+      const deptsMap: Record<string, any> = {};
+      for (const dk of DEPT_KEYS) {
+        if (DEPTS[dk]) {
+          deptsMap[dk] = { ...DEPTS[dk], activeCount: AGENTS.filter(a => a.department === dk).length };
+        }
+      }
+      return json(res, 200, { ok: true, department: deptObj, keys: DEPT_KEYS, depts: deptsMap, departments: deptsMap, coreDepts: DEPT_KEYS, agents: agentsOut() });
     }
     const dm = url.pathname.match(/^\/api\/departments\/([^/]+)$/);
     if (dm && req.method === 'DELETE') {

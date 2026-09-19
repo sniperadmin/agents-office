@@ -170,6 +170,7 @@ export interface DeptManagerOptions {
   DEPTS: Record<string, any>;
   tasks: any;
   refresh3D: () => void;
+  refreshMcp?: () => void;
 }
 
 /**
@@ -179,7 +180,7 @@ export interface DeptManagerOptions {
  * @param options - Department manager configuration & scene callbacks
  */
 export function initDeptManagerDomain(options: DeptManagerOptions) {
-  const { DEPT_KEYS, DEPTS, tasks, refresh3D } = options;
+  const { DEPT_KEYS, DEPTS, tasks, refresh3D, refreshMcp } = options;
 
   const btn = document.getElementById('deptManagerBtn');
   const modal = document.getElementById('deptModal');
@@ -285,6 +286,7 @@ export function initDeptManagerDomain(options: DeptManagerOptions) {
             if (tasks && tasks.syncAgents) tasks.syncAgents(data.agents);
             events.emit('DEPARTMENT_ACTIVATED', { key: tmpl.key, name: tmpl.name });
             refresh3D();
+            if (refreshMcp) refreshMcp();
             loadDepts();
           }
         } catch (err) { console.error('Could not activate reserve team:', err); }
@@ -299,6 +301,7 @@ export function initDeptManagerDomain(options: DeptManagerOptions) {
           await tasks.disbandDepartment(k);
           events.emit('DEPARTMENT_DISBANDED', { key: k });
           refresh3D();
+          if (refreshMcp) refreshMcp();
           loadDepts();
         }
       });
@@ -313,6 +316,7 @@ export function initDeptManagerDomain(options: DeptManagerOptions) {
             await tasks.disbandDepartment(k);
             events.emit('DEPARTMENT_DISBANDED', { key: k });
             refresh3D();
+            if (refreshMcp) refreshMcp();
             loadDepts();
           }
         });

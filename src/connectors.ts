@@ -34,10 +34,13 @@ export function fromSummary(m: any, agents?: any[] | null) {
     const key = s.key || s.id;
     logos[key] = MCP_LOGOS[key] || { name: s.name, img: tile(s.name) };
     names[key] = s.name;
-    status[key] = s.denied ? 'denied' : (s.allowed ? s.status : 'denied');
+    status[key] = s.denied ? 'denied' : (s.allowed !== false ? (s.status || 'connected') : 'denied');
     // only a usable server is wired to pods; the rest sit in the strip, grey, unwired — nothing flows
     if (status[key] !== 'connected') { off.push(key); continue; }
-    for (const d of s.depts || []) if (byDept[d] && !byDept[d].includes(key)) byDept[d].push(key);
+    for (const d of s.depts || []) {
+      if (!byDept[d]) byDept[d] = [];
+      if (!byDept[d].includes(key)) byDept[d].push(key);
+    }
     if ((s.depts || []).length >= 4) shared[key] = INK[key] || INK[norm(s.name)] || inkOf(s.name);
   }
   const agentTools = agents ? Object.fromEntries(agents.map(a => [a.id, (a.tools || []).map((t: string) => {

@@ -42,18 +42,19 @@ function readOne(where: string, entry: fs.Dirent, agents: any[], problems: strin
   const list = (v: any) => v === undefined || v === null ? [] : Array.isArray(v) ? v.map(String).map(s => s.trim()).filter(s => s && s.toLowerCase() !== 'null' && s.toLowerCase() !== 'none') : String(v).split(',').map(s => s.trim()).filter(s => s && s.toLowerCase() !== 'null' && s.toLowerCase() !== 'none');
   const ids = new Set(agents.map(a => a.id));
   const rawAgents = [...list(meta.agents), ...(meta.id ? [String(meta.id)] : [])];
+  const ALL_KNOWN_DEPTS = new Set(['exec', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale', 'dev', 'design', 'devops', 'product_qa', 'sec', 'growth', 'legal_fin', 'support', 'emails', 'ops', 'fin', 'delivery', ...DEPT_KEYS]);
   const bound: string[] = [];
   for (const ag of rawAgents) {
     const low = ag.toLowerCase();
     if (ids.has(low)) { if (!bound.includes(low)) bound.push(low); }
-    else problems.push(`${label}: agent "${ag}" does not exist — ignored`);
+    else if (where !== GLOBAL_SKILLS) problems.push(`${label}: agent "${ag}" does not exist — ignored`);
   }
   const rawDepts = [...list(meta.departments), ...list(meta.department)];
   const depts: string[] = [];
   for (const dp of rawDepts) {
     const low = dp.toLowerCase();
-    if (DEPT_KEYS.includes(low)) { if (!depts.includes(low)) depts.push(low); }
-    else problems.push(`${label}: department "${dp}" does not exist — ignored`);
+    if (ALL_KNOWN_DEPTS.has(low)) { if (!depts.includes(low)) depts.push(low); }
+    else if (where !== GLOBAL_SKILLS) problems.push(`${label}: department "${dp}" does not exist — ignored`);
   }
   for (const k of Object.keys(meta)) if (!['name', 'description', 'agents', 'departments', 'department', 'risk', 'source', 'date_added', 'id', 'role', 'title', 'reportsto', 'budget', 'color', 'emoji', 'adapter', 'signal', 'tools', 'skills', 'context_tier'].includes(k)) problems.push(`${label}: unknown field "${k}" — ignored`);
   const hasExplicitTarget = rawAgents.length > 0 || rawDepts.length > 0;

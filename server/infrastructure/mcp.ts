@@ -12,16 +12,47 @@ const ALIASES: Record<string, string[]> = {
   hyperframes: ['hyperframes'], imessage: ['imessage', 'messages'], claude: ['claude'], chatgpt: ['chatgpt', 'openai'],
   googlecalendar: ['googlecalendar', 'gcal', 'calendar'], googledrive: ['googledrive', 'gdrive', 'drive'], webflow: ['webflow'], playwright: ['playwright'],
   higgsfield: ['higgsfield', 'higgfield'], territool: ['territool'],
+  figma: ['figma'], github: ['github'], linear: ['linear'], jira: ['jira'], hubspot: ['hubspot'], salesforce: ['salesforce'], zapier: ['zapier'],
+  context7: ['context7'], googlecloudfirestore: ['googlecloudfirestore', 'google_cloud_firestore', 'firestore'],
+  jinamcpserver: ['jinamcpserver', 'jina_mcp_server', 'jina'],
+  knowledgecatalog: ['knowledgecatalog', 'knowledge_catalog'],
 };
 
+const ALL_DEPTS = ['exec', 'foundations', 'marketing', 'sales', 'nurture', 'launch', 'partnerships', 'scale', 'design', 'dev', 'devops', 'sec', 'growth', 'creative', 'intel', 'ops', 'fin', 'support', 'legal_fin', 'delivery', 'emails'];
+
 const DEPTS_BY_KEY: Record<string, string[]> = {
-  meta: ['marketing'], canva: ['marketing', 'delivery'], loops: ['marketing'], beehiiv: ['marketing'], hyperframes: ['marketing'],
-  clarity: ['marketing'], notion: DEPT_KEYS, gmail: ['emails', 'sales', 'ops', 'fin', 'delivery'],
-  fullenrich: ['sales'], imessage: ['sales'], apollo: ['sales'], pandadoc: ['ops', 'delivery'], xero: ['fin'], stripe: ['fin'],
-  slack: ['emails', 'ops', 'delivery'], googledrive: ['ops', 'delivery', 'fin'], googlecalendar: ['emails', 'sales', 'delivery'],
-  playwright: ['marketing', 'ops'], github: ['ops', 'delivery'], linear: ['ops', 'delivery'], jira: ['ops', 'delivery'],
-  hubspot: ['sales', 'marketing'], salesforce: ['sales'], zapier: DEPT_KEYS, figma: ['marketing', 'delivery'],
-  webflow: ['marketing', 'delivery'], higgsfield: ['marketing'], territool: ['sales'],
+  meta: ['marketing', 'growth', 'launch'],
+  canva: ['marketing', 'design', 'creative', 'content', 'delivery'],
+  figma: ['design', 'creative', 'marketing', 'product_qa', 'dev'],
+  loops: ['marketing', 'nurture', 'growth'],
+  beehiiv: ['marketing', 'content', 'growth'],
+  hyperframes: ['marketing', 'creative', 'content'],
+  clarity: ['marketing', 'product_qa', 'dev'],
+  notion: ALL_DEPTS,
+  gmail: ['exec', 'sales', 'nurture', 'partnerships', 'support', 'legal_fin', 'marketing', 'ops', 'fin', 'delivery', 'emails'],
+  fullenrich: ['sales', 'partnerships', 'growth'],
+  imessage: ['sales', 'partnerships', 'exec'],
+  apollo: ['sales', 'partnerships', 'growth'],
+  pandadoc: ['sales', 'ops', 'legal_fin', 'partnerships', 'delivery'],
+  xero: ['exec', 'scale', 'fin', 'legal_fin'],
+  stripe: ['exec', 'scale', 'sales', 'fin'],
+  slack: ALL_DEPTS,
+  googledrive: ALL_DEPTS,
+  googlecalendar: ['exec', 'sales', 'nurture', 'partnerships', 'support', 'marketing', 'emails', 'delivery'],
+  playwright: ['marketing', 'ops'],
+  github: ['dev', 'devops', 'sec', 'product_qa', 'ops', 'delivery'],
+  linear: ['dev', 'design', 'product_qa', 'devops', 'ops', 'delivery'],
+  jira: ['dev', 'design', 'product_qa', 'devops', 'ops', 'delivery'],
+  hubspot: ['sales', 'marketing', 'nurture', 'growth'],
+  salesforce: ['sales', 'partnerships', 'growth'],
+  zapier: ALL_DEPTS,
+  webflow: ['marketing', 'design', 'dev', 'growth', 'delivery'],
+  higgsfield: ['marketing', 'creative', 'design', 'content'],
+  territool: ['sales', 'partnerships'],
+  context7: ['dev', 'devops', 'exec', 'product_qa', 'design'],
+  googlecloudfirestore: ['dev', 'devops', 'exec', 'scale'],
+  jinamcpserver: ['marketing', 'growth', 'sales', 'intel', 'design', 'content', 'exec'],
+  knowledgecatalog: ALL_DEPTS,
 };
 
 export const norm = (s: any): string => String(s).toLowerCase().replace(/^claude\.ai\s+/, '').replace(/\s+mcp$/, '').replace(/[^a-z0-9]/g, '');
@@ -51,8 +82,12 @@ const denied = (s: any) => cfgMcp.deny.some(x => matches(s, x));
 const allowed = (s: any) => !denied(s) && (!cfgMcp.allow.length || cfgMcp.allow.some(x => matches(s, x)));
 
 function deptsFor(name: string, key: string | null): string[] {
-  for (const [k, v] of Object.entries(cfgMcp.departments || {})) if (norm(k) === norm(name) || (key && norm(k) === key)) return v.filter(d => DEPT_KEYS.includes(d));
-  return DEPTS_BY_KEY[key || norm(name)] || DEPT_KEYS;
+  for (const [k, v] of Object.entries(cfgMcp.departments || {})) {
+    if (norm(k) === norm(name) || (key && norm(k) === key)) return v;
+  }
+  if (key && DEPTS_BY_KEY[key]) return DEPTS_BY_KEY[key];
+  if (DEPTS_BY_KEY[norm(name)]) return DEPTS_BY_KEY[norm(name)];
+  return ALL_DEPTS;
 }
 
 function make(name: string, target: string, status: string) {

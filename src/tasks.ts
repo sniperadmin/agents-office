@@ -354,33 +354,36 @@ export function initTasks(ctx) {
   function syncDepartments(deptsData: any) {
     if (!deptsData) return;
     const depts = deptsData.depts || deptsData.departments || {};
-    const keys = deptsData.keys || deptsData.coreDepts || Object.keys(depts);
-    if (Array.isArray(keys) && keys.length > 0) {
-      DEPT_KEYS.length = 0;
-      for (const k of keys) {
-        DEPT_KEYS.push(k);
-        if (depts[k]) {
-          DEPTS[k] = {
-            name: depts[k].name || k.toUpperCase(),
-            short: depts[k].short || depts[k].name || k.toUpperCase(),
-            chip: depts[k].chip || '#8FD3F4',
-            ink: depts[k].ink || '#2E86AB',
-            floor: depts[k].floor || '#E6F4FB'
-          };
-        }
+    let keys = deptsData.keys || deptsData.coreDepts || Object.keys(depts);
+    if (!Array.isArray(keys)) keys = Object.keys(depts);
+    if (!keys.includes('exec')) keys.unshift('exec');
+    
+    DEPT_KEYS.length = 0;
+    for (const k of keys) {
+      DEPT_KEYS.push(k);
+      if (depts[k]) {
+        DEPTS[k] = {
+          name: depts[k].name || (k === 'exec' ? 'EXECUTIVE' : k.toUpperCase()),
+          short: depts[k].short || depts[k].name || (k === 'exec' ? 'EXEC' : k.toUpperCase()),
+          chip: depts[k].chip || (k === 'exec' ? '#F59E0B' : '#8FD3F4'),
+          ink: depts[k].ink || (k === 'exec' ? '#B45309' : '#2E86AB'),
+          floor: depts[k].floor || (k === 'exec' ? '#FEF3C7' : '#E6F4FB')
+        };
+      } else if (k === 'exec') {
+        DEPTS['exec'] = { name: 'EXECUTIVE', short: 'EXEC', chip: '#F59E0B', ink: '#B45309', floor: '#FEF3C7' };
       }
-      for (const k of Object.keys(DEPTS)) {
-        if (!DEPT_KEYS.includes(k) && k !== 'brain') {
-          delete DEPTS[k];
-        }
+    }
+    for (const k of Object.keys(DEPTS)) {
+      if (!DEPT_KEYS.includes(k) && k !== 'brain') {
+        delete DEPTS[k];
       }
-      const activeSet = new Set(DEPT_KEYS);
-      for (let i = AGENTS.length - 1; i >= 0; i--) {
-        if (!activeSet.has(AGENTS[i].dept)) {
-          const removedId = AGENTS[i].id;
-          AGENTS.splice(i, 1);
-          if (ctx && ctx.removeAgent3D) ctx.removeAgent3D(removedId);
-        }
+    }
+    const activeSet = new Set(DEPT_KEYS);
+    for (let i = AGENTS.length - 1; i >= 0; i--) {
+      if (!activeSet.has(AGENTS[i].dept)) {
+        const removedId = AGENTS[i].id;
+        AGENTS.splice(i, 1);
+        if (ctx && ctx.removeAgent3D) ctx.removeAgent3D(removedId);
       }
     }
     renderDeptMenu();

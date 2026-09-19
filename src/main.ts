@@ -534,9 +534,27 @@ function refresh3D() {
   realignAllDepts();
 }
 
-// Initial 3D pods & agents build
+if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
+  try {
+    const cached = localStorage.getItem('ao_active_depts');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        DEPT_KEYS.length = 0;
+        DEPT_KEYS.push(...parsed);
+      }
+    } else {
+      DEPT_KEYS.length = 0;
+      DEPT_KEYS.push('exec');
+    }
+  } catch {}
+}
+
+// Initial 3D pods & agents build (only active departments)
 for (const key_ of [...DEPT_KEYS, 'brain']) buildDeptPod(key_);
-for (const a of AGENTS) buildAgent3D(a);
+for (const a of AGENTS) {
+  if (DEPT_KEYS.includes(a.dept)) buildAgent3D(a);
+}
 
 // brain centre
 {
@@ -571,30 +589,32 @@ deptRT.brain.group.traverse(o => { if ((o.isMesh || o.isSprite) && !o.userData.d
    V3.1: served, the list is the user's REAL MCP servers (GET /api/mcp) — the strip waits for it.
    Opened as a file the demo list plays at once. `mcp` is a thin proxy so the rest of the office
    never cares which it got. */
-let mcpImpl = null, mcpDark = false;
+let mcpImpl: any = null, mcpDark = false;
+let mcpUsage: any = null;
+export async function refreshMcp() {
+  try {
+    const c = await loadConnectors();
+    mcpImpl = initMcp({ scene, hud, LAYOUT, DEPTS, DEPT_KEYS, FR, R, connectors: c });
+    if (mcpDark && mcpImpl) mcpImpl.setDark(true);
+    if (mcpUsage && mcpImpl) mcpImpl.setUsage(mcpUsage);
+    mcp.sprites = (mcpImpl && mcpImpl.sprites) || [];
+  } catch (err) {
+    console.warn('refreshMcp failed:', err);
+  }
+}
 const mcp = {
   sprites: [],
-  tick: (...a) => mcpImpl && mcpImpl.tick(...a),
-  onAgentEvent: (...a) => mcpImpl && mcpImpl.onAgentEvent(...a),
-  onToolsUsed: (...a) => mcpImpl && mcpImpl.onToolsUsed(...a),
-  showTip: (...a) => mcpImpl && mcpImpl.showTip(...a),
-  startReveal: (...a) => mcpImpl && mcpImpl.startReveal(...a),
-  setDark: on => { mcpDark = on; if (mcpImpl) mcpImpl.setDark(on); },
-  setUsage: u => { mcpUsage = u; if (mcpImpl) mcpImpl.setUsage(u); }, // V3.6: the plan's gauge; kept until the strip exists
+  tick: (...a: any[]) => mcpImpl && mcpImpl.tick(...a),
+  onAgentEvent: (...a: any[]) => mcpImpl && mcpImpl.onAgentEvent(...a),
+  onToolsUsed: (...a: any[]) => mcpImpl && mcpImpl.onToolsUsed(...a),
+  showTip: (...a: any[]) => mcpImpl && mcpImpl.showTip(...a),
+  startReveal: (...a: any[]) => mcpImpl && mcpImpl.startReveal(...a),
+  setDark: (on: boolean) => { mcpDark = on; if (mcpImpl) mcpImpl.setDark(on); },
+  setUsage: (u: any) => { mcpUsage = u; if (mcpImpl) mcpImpl.setUsage(u); }, // V3.6: the plan's gauge; kept until the strip exists
   isLive: () => !!(mcpImpl && mcpImpl.live),
+  refresh: refreshMcp,
 };
-let mcpUsage = null;
-loadConnectors().then(c => { mcpImpl = initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors: c }); if (mcpDark) mcpImpl.setDark(true); if (mcpUsage) mcpImpl.setUsage(mcpUsage); });
-
-// plants on outer corners
-for (const k of ['emails', 'sales', 'marketing', 'ops', 'delivery']) {
-  const L = LAYOUT[k];
-  const sx = Math.sign(L.pos[0]), sz = Math.sign(L.pos[1]);
-  const p = makePlant();
-  p.position.set(L.pos[0] + sx * (L.w / 2 - 1.6), 0.12, L.pos[1] + sz * (L.d / 2 - 1.6));
-  p.traverse(o => { if (o.isMesh) o.userData.dept = k; });
-  scene.add(p);
-}
+refreshMcp();
 
 /* ---------- focus dim: unfocused depts genuinely darken/desaturate in-scene ---------- */
 let focusDimTarget = 0, focusDim = 0;
@@ -1705,12 +1725,12 @@ resize();
 }
 window.CC = { flyTo, zoomToDept, zoomOut, zoomToApproval, requestApproval, openAgent, view, applyCamera, R, emotes,
   setCam, setDark, brain, connectorReveal: () => mcp.startReveal(performance.now()),
-  toggleBoard: () => tasks.toggle(), addTask: (agentId, title) => tasks.addTask(agentId, title), tasks, routines: () => tasks.routines,
-  refresh3D, resetMeshCache: async () => { await syncInitialStateFromApi(); refresh3D(); return true; },
+  toggleBoard: () => tasks.toggle(), addTask: (agentId: string, title: string) => tasks.addTask(agentId, title), tasks, routines: () => tasks.routines,
+  refresh3D, refreshMcp, resetMeshCache: async () => { await syncInitialStateFromApi(); refresh3D(); await refreshMcp(); return true; },
   deptRT, DEPT_KEYS, DEPTS, AGENTS };
 
 // Department Manager (Domain Driven Module)
-initDeptManagerDomain({ DEPT_KEYS, DEPTS, tasks, refresh3D });
+initDeptManagerDomain({ DEPT_KEYS, DEPTS, tasks, refresh3D, refreshMcp });
 
 // Synchronize initial state from DB if live HTTP
 async function syncInitialStateFromApi() {
@@ -1719,8 +1739,9 @@ async function syncInitialStateFromApi() {
     const res = await fetch('/api/departments');
     if (!res.ok) return;
     const data = await res.json();
-    const activeKeys = data.keys || data.coreDepts || (data.depts ? Object.keys(data.depts) : null);
-    if (!activeKeys || !Array.isArray(activeKeys)) return;
+    let activeKeys = data.keys || data.coreDepts || (data.depts ? Object.keys(data.depts) : null);
+    if (!activeKeys || !Array.isArray(activeKeys)) activeKeys = ['exec'];
+    if (!activeKeys.includes('exec')) activeKeys.unshift('exec');
 
     DEPT_KEYS.length = 0;
     DEPT_KEYS.push(...activeKeys);
@@ -1730,15 +1751,16 @@ async function syncInitialStateFromApi() {
         delete DEPTS[k];
       }
     }
+    DEPTS['exec'] = DEPTS['exec'] || { name: 'EXECUTIVE', short: 'EXEC', chip: '#F59E0B', ink: '#B45309', floor: '#FEF3C7' };
     if (data.depts) {
       for (const k of activeKeys) {
         if (data.depts[k]) {
           DEPTS[k] = {
-            name: data.depts[k].name || k.toUpperCase(),
-            short: data.depts[k].short || data.depts[k].name || k.toUpperCase(),
-            chip: data.depts[k].chip || '#8FD3F4',
-            ink: data.depts[k].ink || '#2E86AB',
-            floor: data.depts[k].floor || '#E6F4FB'
+            name: data.depts[k].name || (k === 'exec' ? 'EXECUTIVE' : k.toUpperCase()),
+            short: data.depts[k].short || data.depts[k].name || (k === 'exec' ? 'EXEC' : k.toUpperCase()),
+            chip: data.depts[k].chip || (k === 'exec' ? '#F59E0B' : '#8FD3F4'),
+            ink: data.depts[k].ink || (k === 'exec' ? '#B45309' : '#2E86AB'),
+            floor: data.depts[k].floor || (k === 'exec' ? '#FEF3C7' : '#E6F4FB')
           };
         }
       }
@@ -1752,6 +1774,7 @@ async function syncInitialStateFromApi() {
       }
     }
     refresh3D();
+    await refreshMcp();
 
     try {
       const aRes = await fetch('/api/agents');
@@ -1786,6 +1809,7 @@ async function syncInitialStateFromApi() {
             }
           }
           refresh3D();
+          await refreshMcp();
         }
       }
     } catch {}
@@ -1793,6 +1817,9 @@ async function syncInitialStateFromApi() {
     if (tasks && tasks.syncDepartments) {
       tasks.syncDepartments(data);
     }
+    try {
+      localStorage.setItem('ao_active_depts', JSON.stringify(DEPT_KEYS));
+    } catch {}
   } catch (e) {
     console.warn('syncInitialStateFromApi error:', e);
   }
@@ -1804,16 +1831,33 @@ sseSync.start();
 events.on('DEPARTMENTS_UPDATED', (payload: any) => {
   if (tasks && tasks.syncDepartments) tasks.syncDepartments(payload);
   if (payload.agents && tasks && tasks.syncAgents) tasks.syncAgents(payload.agents);
+  try {
+    localStorage.setItem('ao_active_depts', JSON.stringify(DEPT_KEYS));
+  } catch {}
   refresh3D();
+  refreshMcp();
+});
+events.on('DEPARTMENT_ACTIVATED', () => {
+  try {
+    localStorage.setItem('ao_active_depts', JSON.stringify(DEPT_KEYS));
+  } catch {}
+  refresh3D();
+  refreshMcp();
 });
 events.on('DEPARTMENT_DISBANDED', () => {
+  try {
+    localStorage.setItem('ao_active_depts', JSON.stringify(DEPT_KEYS));
+  } catch {}
   refresh3D();
+  refreshMcp();
 });
 events.on('AGENT_UPDATED', () => {
   refresh3D();
+  refreshMcp();
 });
 events.on('AGENT_REMOVED', () => {
   refresh3D();
+  refreshMcp();
 });
 
 function initMcpManager() {
@@ -1889,10 +1933,7 @@ function initMcpManager() {
     if (formContainer) formContainer.style.display = 'none';
     loadMcpServers();
     if (window.location.protocol.startsWith('http')) {
-      const connectorsData = await loadConnectors();
-      if (connectorsData && (window as any).CC) {
-        initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors: connectorsData });
-      }
+      await refreshMcp();
     }
   });
 

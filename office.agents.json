@@ -24,6 +24,105 @@
       "brief": ""
     },
     {
+      "id": "foundations-head",
+      "department": "foundations",
+      "lead": true,
+      "is_ceo": false,
+      "name": "FOUNDATIONS HEAD",
+      "role": "FOUNDATIONS HEAD Specialist",
+      "does": "Drives foundations head strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "icp-builder",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "ICP BUILDER",
+      "role": "ICP BUILDER Specialist",
+      "does": "Drives icp builder strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "niche-architect",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "NICHE ARCHITECT",
+      "role": "NICHE ARCHITECT Specialist",
+      "does": "Drives niche architect strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "offer-architect",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "OFFER ARCHITECT",
+      "role": "OFFER ARCHITECT Specialist",
+      "does": "Drives offer architect strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "brand-voice",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "BRAND VOICE SPECIALIST",
+      "role": "BRAND VOICE SPECIALIST Specialist",
+      "does": "Drives brand voice specialist strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "financial-modeler",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "FINANCIAL MODELER",
+      "role": "FINANCIAL MODELER Specialist",
+      "does": "Drives financial modeler strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "researcher",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "RESEARCHER",
+      "role": "RESEARCHER Specialist",
+      "does": "Drives researcher strategy, execution, and deliverables for the department.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "legal",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "LEGAL REVIEW",
+      "role": "Agreement Review Agent",
+      "does": "Reads every agreement before it goes out and gives it a second lens.",
+      "tools": [],
+      "brief": ""
+    },
+    {
+      "id": "invo",
+      "department": "foundations",
+      "lead": false,
+      "is_ceo": false,
+      "name": "INVOICING",
+      "role": "Invoicing Agent",
+      "does": "Raises every invoice, chases every overdue — politely and relentlessly.",
+      "tools": [],
+      "brief": ""
+    },
+    {
       "id": "mlead",
       "department": "marketing",
       "lead": true,
@@ -240,105 +339,6 @@
       "name": "FOLLOW UPS",
       "role": "Second-Touch & Revival Agent",
       "does": "Chases everything that went quiet — unanswered calls, post-demo silence, stalled deals.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "foundations-head",
-      "department": "foundations",
-      "lead": true,
-      "is_ceo": false,
-      "name": "FOUNDATIONS HEAD",
-      "role": "FOUNDATIONS HEAD Specialist",
-      "does": "Drives foundations head strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "icp-builder",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "ICP BUILDER",
-      "role": "ICP BUILDER Specialist",
-      "does": "Drives icp builder strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "niche-architect",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "NICHE ARCHITECT",
-      "role": "NICHE ARCHITECT Specialist",
-      "does": "Drives niche architect strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "offer-architect",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "OFFER ARCHITECT",
-      "role": "OFFER ARCHITECT Specialist",
-      "does": "Drives offer architect strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "brand-voice",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "BRAND VOICE SPECIALIST",
-      "role": "BRAND VOICE SPECIALIST Specialist",
-      "does": "Drives brand voice specialist strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "financial-modeler",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "FINANCIAL MODELER",
-      "role": "FINANCIAL MODELER Specialist",
-      "does": "Drives financial modeler strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "researcher",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "RESEARCHER",
-      "role": "RESEARCHER Specialist",
-      "does": "Drives researcher strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "legal",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "LEGAL REVIEW",
-      "role": "Agreement Review Agent",
-      "does": "Reads every agreement before it goes out and gives it a second lens.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "invo",
-      "department": "foundations",
-      "lead": false,
-      "is_ceo": false,
-      "name": "INVOICING",
-      "role": "Invoicing Agent",
-      "does": "Raises every invoice, chases every overdue — politely and relentlessly.",
       "tools": [],
       "brief": ""
     },
@@ -625,17 +625,6 @@
       "name": "OPERATIONS SPECIALIST",
       "role": "OPERATIONS SPECIALIST Specialist",
       "does": "Drives operations specialist strategy, execution, and deliverables for the department.",
-      "tools": [],
-      "brief": ""
-    },
-    {
-      "id": "exec_lead",
-      "department": "exec",
-      "lead": true,
-      "is_ceo": false,
-      "name": "CHIEF EXECUTIVE OFFICER",
-      "role": "EXECUTIVE Lead",
-      "does": "Manages EXECUTIVE operations",
       "tools": [],
       "brief": ""
     }

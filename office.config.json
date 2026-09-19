@@ -6,12 +6,42 @@
   "mcp": {
     "allow": [],
     "deny": [],
-    "departments": {}
+    "departments": {
+      "StitchMCP": [
+        "exec",
+        "foundations",
+        "marketing",
+        "sales",
+        "nurture",
+        "launch",
+        "partnerships",
+        "scale",
+        "design"
+      ]
+    }
   },
   "tools": {
     "web": true
   },
-  "customDepartments": [],
+  "customDepartments": [
+    {
+      "key": "design",
+      "name": "DESIGN & UI/UX",
+      "short": "DESIGN & UI/UX",
+      "chip": "#EC4899",
+      "ink": "#2E86AB",
+      "floor": "#E6F4FB",
+      "model": "antigravity-flash",
+      "leadName": "DESIGN LEAD",
+      "roles": [
+        "UI Designer",
+        "UX Architect",
+        "UX Researcher",
+        "Brand Guardian",
+        "Whimsy Injector"
+      ]
+    }
+  ],
   "departments": {
     "dev": {
       "model": "antigravity-flash"
