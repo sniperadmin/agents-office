@@ -434,102 +434,150 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, DEPT_KEYS, FR, R, connector
     }
     if (wireA < 0.02) { svg.style.display = 'none'; return; }
     svg.style.display = 'block';
-    const hideWire = (w) => { w.path.setAttribute('d', ''); w.branch && w.branch.setAttribute('d', ''); w.jdot && w.jdot.setAttribute('opacity', 0); w.dot.setAttribute('opacity', 0); };
-    for (const [dept, w] of Object.entries(wires)) {
-      if (f && dept !== f) { hideWire(w); continue; } // focus: only this department's loom
-      // branch fan: one drop per logo → junction under the cluster; trunk: junction → port.
-      // junction depths are staggered per dept so neighbouring fans don't overlap.
-      // gmail is EXCLUDED from every fan — it feeds the junctions via its own loom below
-      const xs = (BY_DEPT[dept] || []).filter(k => !SHARED[k] && topImgs[k]).map(k => {
-        const r = topImgs[k].getBoundingClientRect();
-        return (r.left + r.right) / 2;
-      });
-      if (!xs.length) { // a dept fed only by shared connectors (EMAILS) has no trunk of its own
-        w.path.setAttribute('d', ''); w.branch.setAttribute('d', '');
-        w.jdot.setAttribute('opacity', 0); w.dot.setAttribute('opacity', 0);
-        continue;
+    const hideWire = (w: any) => { w.path.setAttribute('d', ''); w.branch && w.branch.setAttribute('d', ''); w.jdot && w.jdot.setAttribute('opacity', 0); w.dot.setAttribute('opacity', 0); w.curve = null; };
+
+    const getMidX = (el: HTMLElement | null) => {
+      if (!el) return 0;
+      if (!(el as any)._cachedMidX) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0) (el as any)._cachedMidX = (r.left + r.right) / 2;
       }
-      const jx = xs.reduce((a, b) => a + b, 0) / xs.length;
-      const jy = f ? 100 : 104 + w.ji * 12, sy = 50;
-      w.branch.setAttribute('d', xs.map(x =>
-        `M ${x} ${sy} C ${x} ${sy + (jy - sy) * 0.5}, ${jx} ${jy - (jy - sy) * 0.4}, ${jx} ${jy}`).join(' '));
-      const pt = f ? w.fport : w.port;
-      v3.set(pt[0], pt[1], pt[2]).project(cam);
-      const ex = (v3.x * 0.5 + 0.5) * innerWidth, ey = (-v3.y * 0.5 + 0.5) * innerHeight;
-      const side = ex < innerWidth * 0.5 ? -1 : 1;
-      const bow = f ? 30 : Math.min(170, 40 + Math.abs(ex - jx) * 0.25);
-      w.path.setAttribute('d', `M ${jx} ${jy} C ${jx + side * bow * 0.35} ${jy + (ey - jy) * 0.4}, ` +
-        `${ex + side * bow} ${ey - (ey - jy) * 0.45}, ${ex} ${ey}`);
-      w.offset -= dt * (f ? 13 : 6); // slow crawl toward the pod (slower still at rest)
+      return (el as any)._cachedMidX || (innerWidth * 0.5);
+    };
+
+    const isWireGeomDirty = !cam || (cam as any)._wireDirty ||
+      Math.abs(cam.position.x - ((cam as any)._lastWX || 0)) > 0.01 ||
+      Math.abs(cam.position.y - ((cam as any)._lastWY || 0)) > 0.01 ||
+      Math.abs(cam.position.z - ((cam as any)._lastWZ || 0)) > 0.01 ||
+      (cam as any)._lastWF !== f ||
+      (cam as any)._lastWW !== innerWidth ||
+      (cam as any)._lastWH !== innerHeight;
+
+    if (isWireGeomDirty && cam) {
+      (cam as any)._lastWX = cam.position.x;
+      (cam as any)._lastWY = cam.position.y;
+      (cam as any)._lastWZ = cam.position.z;
+      (cam as any)._lastWF = f;
+      (cam as any)._lastWW = innerWidth;
+      (cam as any)._lastWH = innerHeight;
+      (cam as any)._wireDirty = false;
+    }
+
+    for (const [dept, w] of Object.entries(wires)) {
+      if (f && dept !== f) { hideWire(w); continue; }
+      if (isWireGeomDirty) {
+        const xs = (BY_DEPT[dept] || []).filter(k => !SHARED[k] && topImgs[k]).map(k => getMidX(topImgs[k]));
+        if (!xs.length) {
+          hideWire(w);
+          continue;
+        }
+        const jx = xs.reduce((a, b) => a + b, 0) / xs.length;
+        const jy = f ? 100 : 104 + w.ji * 12, sy = 50;
+        w.branch.setAttribute('d', xs.map(x =>
+          `M ${x} ${sy} C ${x} ${sy + (jy - sy) * 0.5}, ${jx} ${jy - (jy - sy) * 0.4}, ${jx} ${jy}`).join(' '));
+        const pt = f ? w.fport : w.port;
+        v3.set(pt[0], pt[1], pt[2]).project(cam);
+        const ex = (v3.x * 0.5 + 0.5) * innerWidth, ey = (-v3.y * 0.5 + 0.5) * innerHeight;
+        const side = ex < innerWidth * 0.5 ? -1 : 1;
+        const bow = f ? 30 : Math.min(170, 40 + Math.abs(ex - jx) * 0.25);
+        const cp1x = jx + side * bow * 0.35, cp1y = jy + (ey - jy) * 0.4;
+        const cp2x = ex + side * bow, cp2y = ey - (ey - jy) * 0.45;
+        w.path.setAttribute('d', `M ${jx} ${jy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${ex} ${ey}`);
+        w.curve = { x0: jx, y0: jy, x1: cp1x, y1: cp1y, x2: cp2x, y2: cp2y, x3: ex, y3: ey };
+        w.jdot.setAttribute('cx', jx); w.jdot.setAttribute('cy', jy);
+        w.dot.setAttribute('cx', ex); w.dot.setAttribute('cy', ey);
+      }
+      w.offset -= dt * (f ? 13 : 6);
       w.path.setAttribute('stroke-dashoffset', w.offset);
-      w.path.setAttribute('stroke-opacity', (f ? 0.8 : 0.26) * wireA); // V3.5: at rest the loom is half as loud (AJ)
-      w.path.setAttribute('stroke-width', f ? 2.2 : 1.6); // heavier in focus so the camera reads it
+      w.path.setAttribute('stroke-opacity', (f ? 0.8 : 0.26) * wireA);
+      w.path.setAttribute('stroke-width', f ? 2.2 : 1.6);
       w.branch.setAttribute('stroke-dashoffset', w.offset);
       w.branch.setAttribute('stroke-opacity', (f ? 0.85 : 0.3) * wireA);
       w.branch.setAttribute('stroke-width', f ? 1.8 : 1.3);
-      w.jdot.setAttribute('cx', jx); w.jdot.setAttribute('cy', jy);
       w.jdot.setAttribute('opacity', (f ? 0.75 : 0.38) * wireA);
-      w.dot.setAttribute('cx', ex); w.dot.setAttribute('cy', ey);
       w.dot.setAttribute('opacity', (f ? 0.85 : 0.45) * wireA);
     }
-    // shared wiring: each shared logo drops to its own junction, then an INDEPENDENT
-    // trunk-style conduit per using dept, ending at that connector's own socket on the pod
+
     for (const [key, sh] of Object.entries(shared)) {
       if (!topImgs[key]) continue;
-      const gr = topImgs[key].getBoundingClientRect();
-      const gx = (gr.left + gr.right) / 2, gsy = 50, gjy = sh.jy;
-      sh.drop.setAttribute('d', `M ${gx} ${gsy} L ${gx} ${gjy}`);
+      const gx = getMidX(topImgs[key]), gsy = 50, gjy = sh.jy;
+      if (isWireGeomDirty) {
+        sh.drop.setAttribute('d', `M ${gx} ${gsy} L ${gx} ${gjy}`);
+        sh.jdot.setAttribute('cx', gx); sh.jdot.setAttribute('cy', gjy);
+      }
       sh.offset -= dt * (f ? 13 : 6);
       sh.drop.setAttribute('stroke-dashoffset', sh.offset);
       sh.drop.setAttribute('stroke-opacity', (f ? 0.6 : 0.3) * wireA);
-      sh.jdot.setAttribute('cx', gx); sh.jdot.setAttribute('cy', gjy);
       sh.jdot.setAttribute('opacity', (f ? 0.75 : 0.38) * wireA);
       for (const [dept, g] of Object.entries(sh.wires)) {
         if (f && dept !== f) { hideWire(g); continue; }
-        const gp = f ? g.fport : g.port;
-        v3.set(gp[0], gp[1], gp[2]).project(cam);
-        const ex = (v3.x * 0.5 + 0.5) * innerWidth, ey = (-v3.y * 0.5 + 0.5) * innerHeight;
-        const side = ex < innerWidth * 0.5 ? -1 : 1;
-        const bow = Math.min(170, 40 + Math.abs(ex - gx) * 0.25);
-        g.path.setAttribute('d', `M ${gx} ${gjy} C ${gx + side * bow * 0.35} ${gjy + (ey - gjy) * 0.4}, ` +
-          `${ex + side * bow} ${ey - (ey - gjy) * 0.45}, ${ex} ${ey}`);
+        if (isWireGeomDirty) {
+          const gp = f ? g.fport : g.port;
+          v3.set(gp[0], gp[1], gp[2]).project(cam);
+          const ex = (v3.x * 0.5 + 0.5) * innerWidth, ey = (-v3.y * 0.5 + 0.5) * innerHeight;
+          const side = ex < innerWidth * 0.5 ? -1 : 1;
+          const bow = Math.min(170, 40 + Math.abs(ex - gx) * 0.25);
+          const cp1x = gx + side * bow * 0.35, cp1y = gjy + (ey - gjy) * 0.4;
+          const cp2x = ex + side * bow, cp2y = ey - (ey - gjy) * 0.45;
+          g.path.setAttribute('d', `M ${gx} ${gjy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${ex} ${ey}`);
+          g.curve = { x0: gx, y0: gjy, x1: cp1x, y1: cp1y, x2: cp2x, y2: cp2y, x3: ex, y3: ey };
+          g.dot.setAttribute('cx', ex); g.dot.setAttribute('cy', ey);
+        }
         g.path.setAttribute('stroke-dashoffset', sh.offset);
         g.path.setAttribute('stroke-opacity', (f ? 0.75 : key === 'notion' ? 0.16 : 0.26) * wireA);
         g.path.setAttribute('stroke-width', f ? 2 : 1.4);
-        g.dot.setAttribute('cx', ex); g.dot.setAttribute('cy', ey);
         g.dot.setAttribute('opacity', (f ? 0.85 : 0.45) * wireA);
       }
     }
-    // model wiring: Claude + ChatGPT logos → the Brain's back edge; they pulse on their own
+
     for (const [k, m] of Object.entries(mwires)) {
       if (!modelImgs[k]) continue;
-      const r = modelImgs[k].getBoundingClientRect();
-      const mx = (r.left + r.right) / 2, msy = 50;
-      v3.set(m.port[0], m.port[1], m.port[2]).project(cam);
-      const ex = (v3.x * 0.5 + 0.5) * innerWidth, ey = (-v3.y * 0.5 + 0.5) * innerHeight;
-      m.path.setAttribute('d', `M ${mx} ${msy} C ${mx} ${msy + (ey - msy) * 0.45}, ${ex + 40} ${ey - (ey - msy) * 0.35}, ${ex} ${ey}`);
+      const mx = getMidX(modelImgs[k]), msy = 50;
+      if (isWireGeomDirty) {
+        v3.set(m.port[0], m.port[1], m.port[2]).project(cam);
+        const ex = (v3.x * 0.5 + 0.5) * innerWidth, ey = (-v3.y * 0.5 + 0.5) * innerHeight;
+        const cp1x = mx, cp1y = msy + (ey - msy) * 0.45;
+        const cp2x = ex + 40, cp2y = ey - (ey - msy) * 0.35;
+        m.path.setAttribute('d', `M ${mx} ${msy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${ex} ${ey}`);
+        m.curve = { x0: mx, y0: msy, x1: cp1x, y1: cp1y, x2: cp2x, y2: cp2y, x3: ex, y3: ey };
+        m.dot.setAttribute('cx', ex); m.dot.setAttribute('cy', ey);
+      }
       m.offset = (m.offset || 0) - dt * (f ? 13 : 6);
       m.path.setAttribute('stroke-dashoffset', m.offset);
       m.path.setAttribute('stroke-opacity', (f ? 0.45 : 0.22) * wireA);
-      m.dot.setAttribute('cx', ex); m.dot.setAttribute('cy', ey);
       m.dot.setAttribute('opacity', (f ? 0.85 : 0.45) * wireA);
     }
     if (now > nextModelPulse) {
       modelPulse('antigravity');
       nextModelPulse = now + 2400 + Math.random() * 3200;
     }
+
+    function sampleBezier(p: any, t: number) {
+      const u = 1 - t;
+      const tt = t * t;
+      const uu = u * u;
+      const uuu = uu * u;
+      const ttt = tt * t;
+      return {
+        x: uuu * p.x0 + 3 * uu * t * p.x1 + 3 * u * tt * p.x2 + ttt * p.x3,
+        y: uuu * p.y0 + 3 * uu * t * p.y1 + 3 * u * tt * p.y2 + ttt * p.y3
+      };
+    }
+
     for (let i = wirePulses.length - 1; i >= 0; i--) {
       const p = wirePulses[i];
       const k = (now - p.t0) / p.dur;
       if (k < 0) continue;
       if (k >= 1) { p.el.remove(); wirePulses.splice(i, 1); continue; }
-      const path = p.model ? mwires[p.model].path
-        : (p.shared && shared[p.shared].wires[p.dept]) ? shared[p.shared].wires[p.dept].path : wires[p.dept].path;
-      if (!path.getAttribute('d')) { p.el.remove(); wirePulses.splice(i, 1); continue; } // wire hidden (other dept in focus)
+      const curve = p.model ? mwires[p.model]?.curve
+        : (p.shared && shared[p.shared]?.wires[p.dept]) ? shared[p.shared].wires[p.dept]?.curve
+        : wires[p.dept]?.curve;
+      if (!curve) { p.el.remove(); wirePulses.splice(i, 1); continue; }
       const e = k * k * (3 - 2 * k);
-      const pt = path.getPointAtLength((p.reverse ? 1 - e : e) * path.getTotalLength());
-      p.el.setAttribute('cx', pt.x); p.el.setAttribute('cy', pt.y);
-      p.el.setAttribute('opacity', (k < 0.15 ? k / 0.15 : k > 0.8 ? (1 - k) / 0.2 : 1) * 0.55 * wireA);
+      const pt = sampleBezier(curve, p.reverse ? 1 - e : e);
+      p.el.setAttribute('cx', pt.x.toFixed(1));
+      p.el.setAttribute('cy', pt.y.toFixed(1));
+      p.el.setAttribute('opacity', ((k < 0.15 ? k / 0.15 : k > 0.8 ? (1 - k) / 0.2 : 1) * 0.55 * wireA).toFixed(2));
     }
   }
 
@@ -735,64 +783,47 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, DEPT_KEYS, FR, R, connector
         L.pos[1] + D.dir.z * D.dist * (1 - k) + fd.z * fdist * k);
     };
 
-    for (const it of items) {
-      if (!it) continue;
-      const off = (it.i - (it.n - 1) / 2) * gap;
-      // coordinated group breath: whole row bobs gently, tiles slightly phase-offset
-      const bob = 0.22 * Math.sin(now / 750 + (it.bobPhase || 0));
-      anchorOf(it.dept, it.sprite.position);
-      it.sprite.position.x += SR.x * off;
-      it.sprite.position.y += bob;
-      it.sprite.position.z += SR.z * off;
+    if (dockA > 0.02) {
+      for (const it of items) {
+        if (!it) continue;
+        const off = (it.i - (it.n - 1) / 2) * gap;
+        const bob = 0.22 * Math.sin(now / 750 + (it.bobPhase || 0));
+        anchorOf(it.dept, it.sprite.position);
+        it.sprite.position.x += SR.x * off;
+        it.sprite.position.y += bob;
+        it.sprite.position.z += SR.z * off;
 
-      it.sprite.visible = it.glow.visible = dockA > 0.02;
-      it.sprite.material.opacity = dockA;
-      const pk = (now - (it.pulseT0 || 0)) / 600;
-      const pop = pk >= 0 && pk < 1 ? 1 + (it.pulseAmp || 0.3) * Math.sin(Math.min(pk, 1) * Math.PI) : 1;
-      it.sprite.scale.set(base * pop, base * pop, 1);
-      it.glow.position.copy(it.sprite.position);
-      it.glow.scale.set(base * 2.1 * pop, base * 2.1 * pop, 1);
-      it.glow.material.opacity = (pk >= 0 && pk < 1 ? 0.85 * Math.sin(pk * Math.PI) * it.pulseAmp / 0.3 : 0) * dockA;
+        it.sprite.visible = it.glow.visible = true;
+        it.sprite.material.opacity = dockA;
+        const pk = (now - (it.pulseT0 || 0)) / 600;
+        const pop = pk >= 0 && pk < 1 ? 1 + (it.pulseAmp || 0.3) * Math.sin(Math.min(pk, 1) * Math.PI) : 1;
+        it.sprite.scale.set(base * pop, base * pop, 1);
+        it.glow.position.copy(it.sprite.position);
+        it.glow.scale.set(base * 2.1 * pop, base * 2.1 * pop, 1);
+        it.glow.material.opacity = (pk >= 0 && pk < 1 ? 0.85 * Math.sin(pk * Math.PI) * it.pulseAmp / 0.3 : 0) * dockA;
 
-      // per-tile name label, zoomed-in only
-      const dimmed = focused && focused !== 'brain' && it.dept !== focused;
-      const a = labelA * dockA * (dimmed ? 1 - 0.85 * focusDim : 1);
-      if (a < 0.02) { it.label.style.display = 'none'; }
-      else {
-        it.label.style.display = 'block';
-        v3.copy(it.sprite.position).project(camera);
-        const sx = (v3.x * 0.5 + 0.5) * innerWidth;
-        const sy = (-v3.y * 0.5 + 0.5) * innerHeight + base * pxPerWorld * 0.5 + 5;
-        it.label.style.transform = `translate(${sx}px,${sy}px) translate(-50%,0)`;
-        it.label.style.opacity = a;
-      }
-    }
-
-    // CONNECTORS group labels + ambient back-and-forth traffic per dock
-    for (const [dept, dk] of Object.entries(docks)) {
-      const n = byDept[dept].length;
-      anchorOf(dept, v3);
-      v3.y += 0.6 + base * 0.62; // pill floats above the row centre
-      v3.project(camera);
-      const sx = (v3.x * 0.5 + 0.5) * innerWidth;
-      const sy = (-v3.y * 0.5 + 0.5) * innerHeight;
-      const dimmed = focused && focused !== 'brain' && dept !== focused;
-      dk.conn.style.transform = `translate(${sx}px,${sy}px) translate(-50%,-100%) scale(${pillScale})`;
-      dk.conn.style.opacity = (dimmed ? 1 - 0.85 * focusDim : 1) * dockA;
-
-      // steady exchange: a random connector and a random desk trade packets both ways —
-      // the constant "connectors helping the agents" energy AJ asked for
-      if (now > dk.nextAmbient && dk.seats.length && n > 0) {
-        const item = byDept[dept][Math.floor(Math.random() * n)];
-        if (item) {
-          const seat = dk.seats[Math.floor(Math.random() * dk.seats.length)];
-          const outFirst = Math.random() < 0.5;
-          pulse(item, now, 0.18);
-          spawnBeam(item, seat, now, { reverse: !outFirst, count: 3, scale: 0.8 });
-          spawnBeam(item, seat, now, { reverse: outFirst, count: 2, delay: 700, scale: 0.7 });
+        const dimmed = focused && focused !== 'brain' && it.dept !== focused;
+        const a = labelA * dockA * (dimmed ? 1 - 0.85 * focusDim : 1);
+        if (a < 0.02) { it.label.style.display = 'none'; }
+        else {
+          it.label.style.display = 'block';
+          v3.copy(it.sprite.position).project(camera);
+          const sx = (v3.x * 0.5 + 0.5) * innerWidth;
+          const sy = (-v3.y * 0.5 + 0.5) * innerHeight + base * pxPerWorld * 0.5 + 5;
+          it.label.style.transform = `translate(${sx}px,${sy}px) translate(-50%,0)`;
+          it.label.style.opacity = a;
         }
-        // overview wires want calm — sparse pulses; zoomed-in docks keep the busy exchange
-        dk.nextAmbient = now + (1300 + Math.random() * 1900) * (focused && focused !== 'brain' ? 1.5 : 2.8);
+      }
+
+      for (const [dept, dk] of Object.entries(docks)) {
+        anchorOf(dept, v3);
+        v3.y += 0.6 + base * 0.62;
+        v3.project(camera);
+        const sx = (v3.x * 0.5 + 0.5) * innerWidth;
+        const sy = (-v3.y * 0.5 + 0.5) * innerHeight;
+        const dimmed = focused && focused !== 'brain' && dept !== focused;
+        dk.conn.style.transform = `translate(${sx}px,${sy}px) translate(-50%,-100%) scale(${pillScale})`;
+        dk.conn.style.opacity = (dimmed ? 1 - 0.85 * focusDim : 1) * dockA;
       }
     }
     tickBeams(now);

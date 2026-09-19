@@ -34,9 +34,9 @@ export function rboxGeo(w, d, h, r = 0.35) {
   return g;
 }
 
-export function rbox(w, d, h, color, r) {
+export function rbox(w, d, h, color, r = 0.35, castShadow = true) {
   const m = new THREE.Mesh(rboxGeo(w, d, h, r), typeof color === 'string' ? mat(color) : color);
-  m.castShadow = true; m.receiveShadow = true;
+  m.castShadow = castShadow; m.receiveShadow = true;
   return m;
 }
 
@@ -110,34 +110,33 @@ export function makeDeskScreenTexture(chip) {
 
 export function makeDesk(chip) {
   const g = new THREE.Group();
-  const top = rbox(5.2, 2.6, 0.22, '#DCC29A', 0.18); top.position.y = 2.1; g.add(top);
-  const ped1 = rbox(0.9, 2.2, 1.9, WHITE, 0.12); ped1.position.set(-2.0, 0.1, 0); g.add(ped1);
-  const ped2 = rbox(0.9, 2.2, 1.9, WHITE, 0.12); ped2.position.set(2.0, 0.1, 0); g.add(ped2);
+  const top = rbox(5.2, 2.6, 0.22, '#DCC29A', 0.18, true); top.position.y = 2.1; g.add(top);
+  const ped1 = rbox(0.9, 2.2, 1.9, WHITE, 0.12, false); ped1.position.set(-2.0, 0.1, 0); g.add(ped1);
+  const ped2 = rbox(0.9, 2.2, 1.9, WHITE, 0.12, false); ped2.position.set(2.0, 0.1, 0); g.add(ped2);
   // monitor
   const screenSet = makeDeskScreenTexture(chip);
-  // rbox extrudes UP from its position — bezel base sits just above the desk top
-  const monBack = rbox(2.3, 0.14, 1.5, '#26262A', 0.08); monBack.position.set(0, 2.75, -0.85); g.add(monBack);
+  const monBack = rbox(2.3, 0.14, 1.5, '#26262A', 0.08, false); monBack.position.set(0, 2.75, -0.85); g.add(monBack);
   const screen = new THREE.Mesh(
     new THREE.PlaneGeometry(2.1, 1.3),
     new THREE.MeshBasicMaterial({ map: screenSet.tex })
   );
   screen.position.set(0, 3.5, -0.77); g.add(screen);
-  const stand = rbox(0.16, 0.16, 0.45, '#3A3A3E', 0.05); stand.position.set(0, 2.32, -0.9); g.add(stand);
+  const stand = rbox(0.16, 0.16, 0.45, '#3A3A3E', 0.05, false); stand.position.set(0, 2.32, -0.9); g.add(stand);
   // keyboard + mug
-  const kb = rbox(1.5, 0.5, 0.07, '#EFEFEA', 0.06); kb.position.set(0, 2.22, 0.35); g.add(kb);
+  const kb = rbox(1.5, 0.5, 0.07, '#EFEFEA', 0.06, false); kb.position.set(0, 2.22, 0.35); g.add(kb);
   const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.14, 0.3, 12), mat(chip));
-  mug.position.set(1.9, 2.36, 0.4); mug.castShadow = true; g.add(mug);
+  mug.position.set(1.9, 2.36, 0.4); mug.castShadow = false; g.add(mug);
   return { group: g, screenSet };
 }
 
 export function makeChair() {
   const g = new THREE.Group();
-  const seat = rbox(1.3, 1.2, 0.22, '#8E998B', 0.35); seat.position.y = 1.25; g.add(seat);
-  const back = rbox(1.25, 0.2, 1.35, '#7C8779', 0.3); back.position.set(0, 1.5, 0.62); g.add(back);
+  const seat = rbox(1.3, 1.2, 0.22, '#8E998B', 0.35, true); seat.position.y = 1.25; g.add(seat);
+  const back = rbox(1.25, 0.2, 1.35, '#7C8779', 0.3, true); back.position.set(0, 1.5, 0.62); g.add(back);
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.85, 8), mat('#55555A'));
-  pole.position.y = 0.82; g.add(pole);
+  pole.position.y = 0.82; pole.castShadow = false; g.add(pole);
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, 0.1, 10), mat('#55555A'));
-  base.position.y = 0.4; base.castShadow = true; g.add(base);
+  base.position.y = 0.4; base.castShadow = false; g.add(base);
   return g;
 }
 
@@ -341,7 +340,7 @@ export function makePlant() {
   for (let i = 0; i < 5; i++) {
     const s = new THREE.Mesh(new THREE.SphereGeometry(0.42 + Math.sin(i * 7) * 0.12, 10, 8), i % 2 ? foliage : foliage2);
     s.position.set(Math.sin(i * 2.4) * 0.35, 1.15 + i * 0.28, Math.cos(i * 2.4) * 0.35);
-    s.castShadow = true; g.add(s);
+    s.castShadow = i === 4; g.add(s);
   }
   return g;
 }
@@ -389,7 +388,7 @@ export function makeNeuralBrain() {
      DUAL PALETTE (M5): every particle carries a CREAM colour (ink-dominant dust that reads
      on the cream office with no dark backing — the M4 orb read as a storm-cloud shadow and
      is gone) and a GALAXY colour (the M4 bright set) — tick lerps between them by gk. */
-  const N = 1100;
+  const N = 350;
   const parts = [];
   const PAL_G = [ // galaxy mode: white-hot core + chip sparkle (needs a dark field)
     ['#FFFFFF', .24], ['#B9B9B2', .13], ['#8B8B85', .10],

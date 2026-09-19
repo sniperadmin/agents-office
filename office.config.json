@@ -91,6 +91,23 @@
         "Brand Guardian",
         "Whimsy Injector"
       ]
+    },
+    {
+      "key": "dev",
+      "name": "DEVELOPMENT",
+      "short": "DEVELOPMENT",
+      "chip": "#3B82F6",
+      "ink": "#2E86AB",
+      "floor": "#E6F4FB",
+      "model": "antigravity-flash",
+      "leadName": "DEV LEAD",
+      "roles": [
+        "Backend Architect",
+        "Frontend Dev",
+        "Mobile Builder",
+        "Solidity Engineer",
+        "3D Specialist"
+      ]
     }
   ],
   "departments": {

@@ -1008,13 +1008,24 @@ export function initTasks(ctx) {
   }
 
   /* ---------- per-frame ---------- */
+  let lastRoutineCheck = 0;
+  let cachedPanelW = 400;
+  function getCachedPanelWidth() {
+    return cachedPanelW;
+  }
+
   function tick(now) {
-    if (!live) { const w = Date.now(); for (const r of routines) if (!r.paused && r.nextAt && r.nextAt <= w) fireDemo(r, false); } // demo: this page is the clock
+    if (!live && now - lastRoutineCheck > 250) {
+      lastRoutineCheck = now;
+      const w = Date.now();
+      for (const r of routines) if (!r.paused && r.nextAt && r.nextAt <= w) fireDemo(r, false);
+    }
     for (const id in R) {
       const r = R[id];
       if (r.state === 'stuck') continue;
-      const d = agentTasks(id, 'doing')[0];
-      if (d && live && !d.live && agentTasks(id, 'next').some(t => t.live)) { d.progress = 1; complete(d); continue; } // live: real work never waits behind theatre
+      const doingList = agentTasks(id, 'doing');
+      const d = doingList[0];
+      if (d && live && !d.live && agentTasks(id, 'next').some(t => t.live)) { d.progress = 1; complete(d); continue; }
       if (d) {
         if (d.live) {
           if (!d.running) runLive(d);
@@ -1042,6 +1053,6 @@ export function initTasks(ctx) {
   }
 
   return { tick, toggle, open, close, openFor, isOpen, boardWidth, onFocusChange, onStuck, onResolve,
-           handleChat, addTask, revise, rowHTML, setDept, tasks, panelWidth: () => panel.offsetWidth, isLive: () => live,
+           handleChat, addTask, revise, rowHTML, setDept, tasks, panelWidth: getCachedPanelWidth, isLive: () => live,
            routines, addRoutine, rtAct, railFor, syncPills, refresh: poll, resolveLive, pendingReject, rejectLive, officeModel: () => officeModel, chosenModel, chosenEffort, syncDepartments, syncAgents, disbandDepartment, removeAgent };
 }
