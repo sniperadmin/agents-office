@@ -7,6 +7,17 @@
     "allow": [],
     "deny": [],
     "departments": {
+      "stitch": [
+        "exec",
+        "foundations",
+        "marketing",
+        "sales",
+        "nurture",
+        "launch",
+        "partnerships",
+        "scale",
+        "design"
+      ],
       "StitchMCP": [
         "exec",
         "foundations",
@@ -89,7 +100,8 @@
         "UX Architect",
         "UX Researcher",
         "Brand Guardian",
-        "Whimsy Injector"
+        "Whimsy Injector",
+        "Stitch Specialist"
       ]
     },
     {

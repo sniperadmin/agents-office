@@ -132,6 +132,33 @@ export function discover(): Promise<any[]> {
     } catch {}
 
     try {
+      const configMcpPath = '/home/nasr/.gemini/config/mcp_config.json';
+      if (fs.existsSync(configMcpPath)) {
+        const raw = JSON.parse(fs.readFileSync(configMcpPath, 'utf8'));
+        const mcpServers = raw.mcpServers || {};
+        for (const [name, cfg] of Object.entries(mcpServers)) {
+          const id = toolId(name);
+          const key = logoKey(name) || id;
+          const existing = listMap.get(id);
+          const serverObj = {
+            id,
+            name: display(name),
+            key,
+            status: 'connected',
+            target: (cfg as any).command || (cfg as any).serverUrl || '',
+            source: 'config',
+            depts: deptsFor(name, key),
+            tools: existing?.tools || [],
+            command: (cfg as any).command,
+            args: (cfg as any).args,
+            env: (cfg as any).env,
+          };
+          listMap.set(id, serverObj);
+        }
+      }
+    } catch {}
+
+    try {
       const ideMcpDir = '/home/nasr/.gemini/antigravity-ide/mcp';
       if (fs.existsSync(ideMcpDir)) {
         const dirents = fs.readdirSync(ideMcpDir, { withFileTypes: true });
